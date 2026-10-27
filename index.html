@@ -1,0 +1,2857 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔮 ERP 隨堂測驗平台 (ERP Quiz Adventure)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Chart.js 供老師後台戰績看板渲染雷達圖與分佈圖 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- 引入 Google Fonts Inter, JetBrains Mono & Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
+            background-color: #0f172a; /* bg-slate-900 */
+            color: #f8fafc;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(124, 58, 237, 0.14) 0%, transparent 35%),
+                radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.12) 0%, transparent 35%);
+            background-attachment: fixed;
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .cyber-glow {
+            box-shadow: 0 0 15px rgba(124, 58, 237, 0.45);
+        }
+        .cyber-glow-cyan {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.45);
+        }
+        .card-enter {
+            animation: cyberFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes cyberFadeIn {
+            from { opacity: 0; transform: translateY(8px) scale(0.99); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes hpShake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+        .shake-anim {
+            animation: hpShake 0.35s ease-in-out;
+        }
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-violet-600 selection:text-white">
+
+    <!-- 頂部非阻塞 Toast 通知容器 (用於難度自動降階補足提示、AI 生成狀態等) -->
+    <div id="toastContainer" class="fixed top-20 right-4 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none"></div>
+
+    <!-- 頂部導航列 (Navbar) -->
+    <header class="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+            <!-- 左側品牌標誌與標題 -->
+            <div class="flex items-center space-x-3">
+                <div class="w-11 h-11 rounded-2xl bg-violet-950/90 border border-violet-500/50 flex items-center justify-center text-2xl cyber-glow select-none">
+                    🔮
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                            ERP 隨堂測驗平台
+                        </h1>
+                        <span class="hidden md:inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono-num font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/40">
+                            ERP Quiz Adventure
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                        <span>主導顧問：<strong class="text-cyan-400">Tony 楊文澤老師</strong></span>
+                        <span id="cloudStatusBadge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-[11px] text-slate-300 border border-slate-700">
+                            <span id="cloudStatusDot" class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                            <span id="cloudStatusText">連線同步中...</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側玩家狀態徽章 & 模式切換 (學生挑戰者 ⇄ 老師管理後台) -->
+            <div class="flex items-center gap-3">
+                <!-- 當前學生角色小徽章 -->
+                <div id="navHeroBadge" class="hidden sm:flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-3 py-1.5 rounded-xl text-xs">
+                    <span id="navHeroEmoji" class="text-lg">🧙‍♂️</span>
+                    <div class="leading-tight">
+                        <div id="navHeroName" class="font-bold text-white">Alex Chen</div>
+                        <div class="text-[10px] font-mono-num text-cyan-400">LV.<span id="navHeroLv">1</span> · EXP <span id="navHeroExp">0</span></div>
+                    </div>
+                </div>
+
+                <!-- 身分切換按鈕組 -->
+                <div class="bg-slate-800 p-1 rounded-2xl border border-slate-700 flex items-center text-xs sm:text-sm font-semibold">
+                    <button id="switchStudentBtn" type="button" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 bg-violet-600 text-white cyber-glow">
+                        <span>⚔️</span>
+                        <span>學生闖關</span>
+                    </button>
+                    <button id="switchTeacherBtn" type="button" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-400 hover:text-white">
+                        <span>🛡️</span>
+                        <span>老師後台</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 未完成試煉恢復提示列 (Edge Case: 中途重整或斷網恢復提示) -->
+    <div id="resumeSessionBanner" class="hidden bg-amber-500/15 border-b border-amber-500/40 text-amber-300 text-xs px-4 py-2.5">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <span class="text-base">⏳</span>
+                <span id="resumeSessionText">偵測到您上次有未完成的 ERP 闖關試煉進度，是否立即恢復挑戰？</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="resumeConfirmBtn" type="button" class="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition">
+                    繼續未完成試煉
+                </button>
+                <button id="resumeDiscardBtn" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+                    放棄並清除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主內容區 (Main Container) -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- =================================================================== -->
+        <!-- 視角 1：學生端 - 闖關試煉系統 (Student Adventure View)               -->
+        <!-- =================================================================== -->
+        <div id="studentViewContainer" class="space-y-6">
+
+            <!-- 1A. 學生闖關大廳 (角色建立 + 難度選擇 + 關卡地圖 + 英雄榜) -->
+            <div id="studentLobbySection" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+                <!-- 左側欄：角色化身設定與難易度選擇器 (4 cols) -->
+                <div class="lg:col-span-4 space-y-6">
+                    <!-- 角色化身選擇卡片 -->
+                    <div class="bg-slate-800/90 rounded-2xl border border-slate-700/80 p-5 shadow-lg space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-0.5 rounded-lg bg-violet-500/20 text-violet-300 border border-violet-500/30 text-xs font-bold">
+                                STEP 1 · 挑戰者化身
+                            </span>
+                            <span class="text-xs font-mono-num text-cyan-400" id="heroClassTag">ERP 魔法師</span>
+                        </div>
+
+                        <div>
+                            <label for="studentNameInput" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                挑戰者學號／暱稱 (Student Nickname)
+                            </label>
+                            <input id="studentNameInput" type="text" value="Alex (B112088)" placeholder="請輸入學號或冒險暱稱..."
+                                class="w-full bg-slate-900 border border-slate-700 focus:border-violet-500 text-white text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition" />
+                        </div>
+
+                        <!-- Avatar 選擇清單 -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-2">
+                                挑選代表你的 RPG 職業角色：
+                            </label>
+                            <div id="avatarSelectorGrid" class="grid grid-cols-2 gap-2.5">
+                                <!-- 由 JS 動態生成 4 個 RPG 職業卡片 -->
+                            </div>
+                        </div>
+
+                        <!-- 角色屬性與累積戰績 -->
+                        <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-700/70 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-slate-400">角色職業特性</span>
+                                <span id="avatarTraitText" class="text-violet-300 font-semibold">擅長全模組邏輯整合與流程推演</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div id="heroExpBar" class="bg-gradient-to-r from-violet-600 to-cyan-400 h-full transition-all duration-500" style="width: 20%"></div>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px] font-mono-num text-slate-400">
+                                <span>已通關單元：<strong id="statClearedCount" class="text-emerald-400">0</strong></span>
+                                <span>總累積積分：<strong id="statTotalExp" class="text-cyan-400">0</strong> EXP</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 難度選擇器卡片 (Easy / Medium / Hard) -->
+                    <div class="bg-slate-800/90 rounded-2xl border border-slate-700/80 p-5 shadow-lg space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold">
+                                STEP 2 · 試煉難度設定
+                            </span>
+                            <span id="difficultyMultiplierBadge" class="text-xs font-mono-num font-bold text-amber-400">計分倍率 x1.2</span>
+                        </div>
+
+                        <div id="difficultySelectorGroup" class="grid grid-cols-3 gap-2">
+                            <button type="button" data-diff="easy" class="diff-btn p-3 rounded-xl border text-center transition flex flex-col items-center gap-1">
+                                <span class="text-lg">🌱</span>
+                                <span class="text-xs font-bold">簡單 Easy</span>
+                                <span class="text-[10px] text-slate-400">基礎概念 · x1.0</span>
+                            </button>
+                            <button type="button" data-diff="medium" class="diff-btn p-3 rounded-xl border text-center transition flex flex-col items-center gap-1">
+                                <span class="text-lg">⚔️</span>
+                                <span class="text-xs font-bold">普通 Mid</span>
+                                <span class="text-[10px] text-slate-400">標準流程 · x1.2</span>
+                            </button>
+                            <button type="button" data-diff="hard" class="diff-btn p-3 rounded-xl border text-center transition flex flex-col items-center gap-1">
+                                <span class="text-lg">🐉</span>
+                                <span class="text-xs font-bold">困難 Hard</span>
+                                <span class="text-[10px] text-slate-400">情境計算 · x1.5</span>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-700/60">
+                            <label for="quizQuestionCountSelect" class="text-slate-300 font-medium">單次試煉抽題數量：</label>
+                            <select id="quizQuestionCountSelect" class="bg-slate-900 border border-slate-700 text-cyan-400 font-mono-num text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-violet-500">
+                                <option value="5" selected>隨機抽選 5 題 (標準試煉)</option>
+                                <option value="6">隨機抽選 6 題 (進階試煉)</option>
+                                <option value="8">隨機抽選 8 題 (深淵魔王戰)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右側欄：ERP 關卡大廳地圖 & 最近挑戰英雄榜 (8 cols) -->
+                <div class="lg:col-span-8 space-y-6">
+                    <!-- 關卡地圖標題區 -->
+                    <div class="bg-slate-800/90 rounded-2xl border border-slate-700/80 p-6 shadow-lg">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-700/80">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2.5 py-0.5 rounded-lg bg-violet-600 text-white text-xs font-bold">
+                                        STEP 3 · 關卡地圖
+                                    </span>
+                                    <h2 class="text-lg sm:text-xl font-extrabold text-white">選擇要挑戰的 ERP 試煉領域</h2>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1">
+                                    每個關卡皆會依所選難度自題庫動態隨機抽題，選項順序亦全數亂數排列！
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs font-mono-num bg-slate-900 px-3 py-2 rounded-xl border border-slate-700">
+                                <span class="text-slate-400">可用總題庫：</span>
+                                <strong id="lobbyTotalQuestionsCount" class="text-cyan-400 text-sm">0 題</strong>
+                            </div>
+                        </div>
+
+                        <!-- 關卡卡片網格 -->
+                        <div id="levelsMapGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+                            <!-- 由 JS 動態渲染各個 ERP 關卡卡片 -->
+                        </div>
+                    </div>
+
+                    <!-- 即時冒險英雄榜 (Recent Adventures & Leaderboard) -->
+                    <div class="bg-slate-800/90 rounded-2xl border border-slate-700/80 p-6 shadow-lg">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xl">🏆</span>
+                                <h3 class="text-base font-bold text-white">最新冒險者榮譽戰報 (Live Leaderboard)</h3>
+                            </div>
+                            <span class="text-xs text-slate-400 font-mono-num">即時同步自雲端殿堂</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse text-xs sm:text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-700 text-slate-400 text-[11px] uppercase font-mono-num">
+                                        <th class="py-2.5 px-3">挑戰者</th>
+                                        <th class="py-2.5 px-3">試煉關卡</th>
+                                        <th class="py-2.5 px-3">難度</th>
+                                        <th class="py-2.5 px-3">正確率</th>
+                                        <th class="py-2.5 px-3">戰果得分</th>
+                                        <th class="py-2.5 px-3">耗時</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="studentLeaderboardBody" class="divide-y divide-slate-700/60">
+                                    <!-- 由 JS 渲染 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 1B. 戰鬥答題競技場介面 (Active Battle Quiz Arena) -->
+            <div id="studentBattleSection" class="hidden max-w-4xl mx-auto space-y-5 card-enter">
+
+                <!-- 頂部 RPG 狀態列：玩家 HP 生命條、Combo 連擊、計時器、關卡進度 -->
+                <div id="battleHudCard" class="bg-slate-800/95 rounded-2xl border border-violet-500/40 p-4 sm:p-5 cyber-glow">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <!-- 左側：冒險者資訊與 HP 血條 -->
+                        <div class="flex items-center gap-3.5 flex-1 min-w-[240px]">
+                            <div id="battleAvatarBox" class="w-14 h-14 rounded-2xl bg-slate-900 border border-violet-500/50 flex items-center justify-center text-3xl shadow-inner">
+                                🧙‍♂️
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-2">
+                                        <span id="battlePlayerName" class="font-bold text-white text-sm sm:text-base">Alex</span>
+                                        <span id="battleDiffBadge" class="px-2 py-0.5 rounded text-[10px] font-mono-num font-bold uppercase bg-violet-500/30 text-violet-200">MEDIUM</span>
+                                    </div>
+                                    <span id="battleHpText" class="text-xs font-mono-num font-bold text-emerald-400">HP 100 / 100</span>
+                                </div>
+                                <!-- HP 血條動畫 -->
+                                <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-700 p-0.5">
+                                    <div id="battleHpBar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300" style="width: 100%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 右側：連擊能量、計時器與放棄按鈕 -->
+                        <div class="flex items-center gap-3 sm:gap-4">
+                            <div class="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-center">
+                                <div class="text-[10px] text-slate-400 uppercase font-mono-num">COMBO 連擊</div>
+                                <div id="battleComboText" class="text-base sm:text-lg font-mono-num font-extrabold text-amber-400">0 🔥</div>
+                            </div>
+                            <div class="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-center">
+                                <div class="text-[10px] text-slate-400 uppercase font-mono-num">TIME 試煉計時</div>
+                                <div id="battleTimerText" class="text-base sm:text-lg font-mono-num font-extrabold text-cyan-400">00:00</div>
+                            </div>
+                            <button id="abortBattleBtn" type="button" class="px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-950/80 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition">
+                                撤退離開
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 關卡試煉進度條 -->
+                    <div class="mt-4 pt-3 border-t border-slate-700/80 flex items-center justify-between text-xs text-slate-300">
+                        <span id="battleLevelTitle" class="font-semibold text-violet-300">單元一：採購與應付帳款模組</span>
+                        <span id="battleProgressText" class="font-mono-num text-cyan-400">Encounter 1 / 5</span>
+                    </div>
+                    <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-1.5">
+                        <div id="battleProgressBar" class="bg-violet-500 h-full transition-all duration-300" style="width: 20%"></div>
+                    </div>
+                </div>
+
+                <!-- 題目主卡片 -->
+                <div id="battleQuestionCard" class="bg-slate-800/95 rounded-2xl border border-slate-700 p-6 sm:p-8 shadow-xl space-y-6">
+                    <div class="flex items-center justify-between gap-2">
+                        <span id="questionDiffPill" class="px-2.5 py-1 rounded-lg text-xs font-mono-num font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            難度：MEDIUM
+                        </span>
+                        <span id="questionIdLabel" class="text-xs font-mono-num text-slate-500">#Q_1001</span>
+                    </div>
+
+                    <h3 id="battleQuestionPrompt" class="text-lg sm:text-xl font-bold text-white leading-relaxed">
+                        題目載入中...
+                    </h3>
+
+                    <!-- 四選一亂數選項容器 -->
+                    <div id="battleOptionsList" class="grid grid-cols-1 gap-3">
+                        <!-- 由 JS 渲染選項按鈕 -->
+                    </div>
+
+                    <!-- 即時答題反饋橫幅 (選擇答案後立即顯示正確與否及標準解析) -->
+                    <div id="instantFeedbackBox" class="hidden p-4 rounded-xl border space-y-1.5">
+                        <div id="instantFeedbackTitle" class="text-sm font-extrabold"></div>
+                        <p id="instantFeedbackExp" class="text-xs sm:text-sm text-slate-200 leading-relaxed"></p>
+                    </div>
+
+                    <!-- 底部行動控制列 (防抖禁用保護 Debounce & Disable) -->
+                    <div class="pt-3 border-t border-slate-700/80 flex items-center justify-between gap-4">
+                        <span class="text-xs text-slate-400">💡 提示：點擊選項即可發動技能鎖定答案</span>
+                        <button id="nextOrFinishBattleBtn" type="button" disabled
+                            class="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-sm cyber-glow transition flex items-center gap-2">
+                            <span id="nextOrFinishBtnText">前往下一道試煉</span>
+                            <span>→</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 1C. RPG 試煉結算與 AI 錯題導師畫面 (Victory / Defeat Settlement Screen) -->
+            <div id="studentResultSection" class="hidden max-w-4xl mx-auto space-y-6 card-enter">
+                <div class="bg-slate-800/95 rounded-2xl border border-violet-500/50 p-6 sm:p-8 cyber-glow space-y-6">
+                    <!-- 頂部通關稱號與分數展示 -->
+                    <div class="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-slate-700">
+                        <div class="flex items-center gap-4">
+                            <div id="resultBadgeIcon" class="w-20 h-20 rounded-2xl bg-violet-950 border-2 border-violet-400 flex items-center justify-center text-5xl shadow-lg">
+                                🏆
+                            </div>
+                            <div>
+                                <span id="resultPassTag" class="px-3 py-1 rounded-full text-xs font-mono-num font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                    QUEST CLEARED · 試煉通過
+                                </span>
+                                <h2 id="resultHeadline" class="text-2xl sm:text-3xl font-black text-white mt-1.5">
+                                    傳奇誕生！完全制霸關卡
+                                </h2>
+                                <p id="resultSubtext" class="text-xs sm:text-sm text-slate-400 mt-0.5">
+                                    單元一：採購與應付帳款模組 (AP)
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- 總得分與經驗值 -->
+                        <div class="flex items-center gap-4 bg-slate-900/90 px-5 py-4 rounded-2xl border border-slate-700">
+                            <div class="text-center pr-4 border-r border-slate-700">
+                                <div class="text-[11px] font-mono-num text-slate-400 uppercase">FINAL SCORE</div>
+                                <div id="resultScoreNum" class="text-3xl sm:text-4xl font-mono-num font-extrabold text-cyan-400">100</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-[11px] font-mono-num text-slate-400 uppercase">EXP GAINED</div>
+                                <div id="resultExpGainNum" class="text-2xl font-mono-num font-extrabold text-amber-400">+120 EXP</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 四格戰報數據 -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80">
+                            <div class="text-xs text-slate-400">命中題數</div>
+                            <div id="resultCorrectRatio" class="text-lg font-mono-num font-bold text-emerald-400 mt-1">5 / 5 題</div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80">
+                            <div class="text-xs text-slate-400">挑戰難度倍率</div>
+                            <div id="resultDifficultyLabel" class="text-lg font-mono-num font-bold text-violet-400 mt-1">MEDIUM (x1.2)</div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80">
+                            <div class="text-xs text-slate-400">通關耗時</div>
+                            <div id="resultTimeSpent" class="text-lg font-mono-num font-bold text-cyan-400 mt-1">42 秒</div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80">
+                            <div class="text-xs text-slate-400">剩餘生命值</div>
+                            <div id="resultRemainHp" class="text-lg font-mono-num font-bold text-amber-400 mt-1">100 HP</div>
+                        </div>
+                    </div>
+
+                    <!-- Gemini AI 錯題導師「一分鐘觀念提點」區塊 -->
+                    <div class="p-5 rounded-2xl bg-gradient-to-br from-violet-950/90 via-slate-900 to-slate-900 border border-violet-500/40 space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xl">🔮</span>
+                                <h3 class="text-sm sm:text-base font-bold text-violet-200">Gemini AI 錯題導師 · 一分鐘觀念提點</h3>
+                            </div>
+                            <button id="invokeAiTutorBtn" type="button" class="px-3.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition shadow-md flex items-center gap-1.5">
+                                <span>✨ 召喚 AI 大導師深度解析</span>
+                            </button>
+                        </div>
+                        <div id="aiTutorResponseText" class="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                            點擊右上角「召喚 AI 大導師深度解析」，由 Gemini 針對您本次試煉的錯題進行一分鐘核心觀念提點！
+                        </div>
+                    </div>
+
+                    <!-- 逐題檢討與錯題解析清單 -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold text-slate-300 uppercase tracking-wider">📜 試煉逐題戰鬥紀錄與標準解析</h3>
+                        <div id="resultReviewList" class="space-y-3">
+                            <!-- 由 JS 渲染每題作答明細 -->
+                        </div>
+                    </div>
+
+                    <!-- 底部行動按鈕 -->
+                    <div class="pt-4 border-t border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                        <button id="backToLobbyBtn" type="button" class="px-5 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold transition">
+                            ← 返回關卡大廳
+                        </button>
+                        <button id="retrySameLevelBtn" type="button" class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-sm font-extrabold cyber-glow-cyan transition">
+                            🔄 再次挑戰本關卡 (重新隨機抽題)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- 視角 2：老師管理後台與數據看板 (Teacher Admin & Analytics View)      -->
+        <!-- =================================================================== -->
+        <div id="teacherViewContainer" class="hidden space-y-6 card-enter">
+
+            <!-- 頂部後台導航列與子頁籤切換 -->
+            <div class="bg-slate-800/90 rounded-2xl border border-slate-700 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-xl">
+                        🛡️
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-extrabold text-white">Tony 老師指揮中心 (Instructor Command Center)</h2>
+                        <p class="text-xs text-slate-400">管理 ERP 單元關卡、使用 Gemini AI 結構化提取題庫，並即時監控全班學習雷達圖。</p>
+                    </div>
+                </div>
+
+                <!-- 後台三大模組切換 Tabs -->
+                <div class="flex flex-wrap items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
+                    <button type="button" data-teacher-tab="analytics" class="teacher-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition bg-violet-600 text-white">
+                        📊 戰績數據看板
+                    </button>
+                    <button type="button" data-teacher-tab="questions" class="teacher-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white">
+                        🔮 AI 智慧出題與題庫
+                    </button>
+                    <button type="button" data-teacher-tab="levels" class="teacher-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white">
+                        🗺️ 關卡配置管理
+                    </button>
+                </div>
+            </div>
+
+            <!-- 後台 Tab 1：戰績看板與 Chart.js 視覺化儀表板 -->
+            <div id="teacherTabAnalytics" class="space-y-6">
+                <!-- 四格核心 KPI 卡片 -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-slate-800/90 p-5 rounded-2xl border border-slate-700">
+                        <div class="text-xs text-slate-400">全班累計闖關次數</div>
+                        <div id="kpiTotalRuns" class="text-2xl sm:text-3xl font-mono-num font-black text-white mt-1">0</div>
+                        <div class="text-[11px] text-emerald-400 mt-1">即時同步自 quiz_records</div>
+                    </div>
+                    <div class="bg-slate-800/90 p-5 rounded-2xl border border-slate-700">
+                        <div class="text-xs text-slate-400">全班總平均得分</div>
+                        <div id="kpiAvgScore" class="text-2xl sm:text-3xl font-mono-num font-black text-cyan-400 mt-1">0</div>
+                        <div class="text-[11px] text-slate-400 mt-1">滿分 100 分制</div>
+                    </div>
+                    <div class="bg-slate-800/90 p-5 rounded-2xl border border-slate-700">
+                        <div class="text-xs text-slate-400">最高榮譽紀錄</div>
+                        <div id="kpiTopScore" class="text-2xl sm:text-3xl font-mono-num font-black text-amber-400 mt-1">0</div>
+                        <div id="kpiTopStudent" class="text-[11px] text-amber-200/80 mt-1 truncate">-</div>
+                    </div>
+                    <div class="bg-slate-800/90 p-5 rounded-2xl border border-slate-700">
+                        <div class="text-xs text-slate-400">關卡平均及格率</div>
+                        <div id="kpiPassRate" class="text-2xl sm:text-3xl font-mono-num font-black text-emerald-400 mt-1">0%</div>
+                        <div class="text-[11px] text-slate-400 mt-1">依各關卡設定之通過標準</div>
+                    </div>
+                </div>
+
+                <!-- Chart.js 雙圖表區：各單元能力雷達圖 & 常見錯題魔王排行 -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- 單元表現雷達圖 (6 cols) -->
+                    <div class="lg:col-span-6 bg-slate-800/90 rounded-2xl border border-slate-700 p-5 flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 class="text-base font-bold text-white">🎯 全班各 ERP 單元平均掌握度雷達圖</h3>
+                                <p class="text-xs text-slate-400">動態聚合各關卡平均分數與最高表現</p>
+                            </div>
+                            <button id="simulateStudentRecordBtn" type="button" class="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition">
+                                ➕ 模擬一筆學生闖關數據
+                            </button>
+                        </div>
+                        <div class="relative h-72 w-full flex items-center justify-center">
+                            <canvas id="levelRadarChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 高頻答錯題目排行榜 (6 cols) -->
+                    <div class="lg:col-span-6 bg-slate-800/90 rounded-2xl border border-slate-700 p-5 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 class="text-base font-bold text-white">💀 班級知識盲點 · 高頻錯題排行 (Top Missed)</h3>
+                                    <p class="text-xs text-slate-400">根據學生提交之 <code class="text-rose-400">wrongQuestions</code> 統計最常答錯的考題</p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 text-xs font-mono-num font-bold">重點複習指標</span>
+                            </div>
+                            <div id="topWrongQuestionsList" class="space-y-2.5 mt-4">
+                                <!-- 由 JS 動態統計渲染 -->
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-700/80 text-xs text-slate-400 flex items-center justify-between">
+                            <span>💡 老師可針對紅燈考題於課堂進行觀念強化</span>
+                            <button id="exportRecordsCsvBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition">
+                                📥 匯出全班成績 CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 學生歷次測驗成績明細表 -->
+                <div class="bg-slate-800/90 rounded-2xl border border-slate-700 overflow-hidden">
+                    <div class="p-5 border-b border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-base font-bold text-white">📋 全班挑戰者歷次測驗紀錄表 (quiz_records)</h3>
+                            <p class="text-xs text-slate-400">可依關卡或難度篩選檢視詳細戰果</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <select id="adminFilterLevel" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-violet-500">
+                                <option value="ALL">所有單元關卡</option>
+                            </select>
+                            <select id="adminFilterDiff" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-violet-500">
+                                <option value="ALL">所有難度</option>
+                                <option value="easy">簡單 Easy</option>
+                                <option value="medium">普通 Medium</option>
+                                <option value="hard">困難 Hard</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs sm:text-sm">
+                            <thead>
+                                <tr class="bg-slate-900/90 border-b border-slate-700 text-slate-400 text-[11px] font-mono-num uppercase">
+                                    <th class="py-3 px-4">完成時間</th>
+                                    <th class="py-3 px-4">挑戰者與角色</th>
+                                    <th class="py-3 px-4">單元關卡</th>
+                                    <th class="py-3 px-4">難度</th>
+                                    <th class="py-3 px-4">答對題數</th>
+                                    <th class="py-3 px-4">總得分</th>
+                                    <th class="py-3 px-4">作答耗時</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminRecordsTableBody" class="divide-y divide-slate-700/60">
+                                <!-- 由 JS 渲染 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 後台 Tab 2：Gemini AI 結構化自動出題 & 題庫管理 -->
+            <div id="teacherTabQuestions" class="hidden space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- 左側：Gemini AI 講義解析自動生成題目 (6 cols) -->
+                    <div class="lg:col-span-6 bg-slate-800/90 rounded-2xl border border-violet-500/40 p-6 cyber-glow space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-1 rounded-lg bg-violet-600 text-white text-xs font-bold">
+                                🔮 Gemini API 智慧出題引擎
+                            </span>
+                            <span class="text-xs font-mono-num text-cyan-400">Structured JSON Output</span>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-bold text-white">貼上教學大綱或上傳教材，一鍵生成四選一考題</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            支援貼上 ERP 講義段落或上傳 <code class="text-cyan-300">.txt / .md / .csv / .json</code> 教材文本，由 Gemini 自動解析並產出符合指定難度的單選題寫入題庫。若 API 超時，亦支援直接貼上 JSON 匯入（Edge Case 降級策略）。
+                        </p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">目標歸屬關卡</label>
+                                <select id="aiTargetLevelSelect" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2.5">
+                                    <!-- 由 JS 填入 -->
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">生成題目難度與題數</label>
+                                <div class="flex gap-2">
+                                    <select id="aiTargetDiffSelect" class="flex-1 bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2.5">
+                                        <option value="easy">簡單 Easy</option>
+                                        <option value="medium" selected>普通 Medium</option>
+                                        <option value="hard">困難 Hard</option>
+                                    </select>
+                                    <select id="aiGenerateCountSelect" class="w-24 bg-slate-900 border border-slate-700 text-cyan-400 font-mono-num text-xs font-bold rounded-xl px-2.5 py-2.5">
+                                        <option value="2">2 題</option>
+                                        <option value="3" selected>3 題</option>
+                                        <option value="5">5 題</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 讀取本地講義檔案按鈕 -->
+                        <div class="flex items-center justify-between bg-slate-900/80 px-3.5 py-2 rounded-xl border border-slate-700">
+                            <span class="text-xs text-slate-400">📂 匯入講義文字檔或 JSON 備份：</span>
+                            <label class="px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs text-white font-semibold cursor-pointer transition">
+                                選擇檔案讀取
+                                <input id="materialFileInput" type="file" accept=".txt,.md,.json,.csv" class="hidden" />
+                            </label>
+                        </div>
+
+                        <div>
+                            <label for="aiSourceMaterialInput" class="block text-xs font-semibold text-slate-300 mb-1">
+                                教材內文大綱 / 或貼上結構化 JSON 陣列：
+                            </label>
+                            <textarea id="aiSourceMaterialInput" rows="5"
+                                placeholder="請貼上 ERP 課程講義內容（例如：標準成本差異分析、ATP 可承諾量計算公式、採購三向匹配原則...）"
+                                class="w-full bg-slate-900 border border-slate-700 focus:border-violet-500 text-white text-xs sm:text-sm rounded-xl p-3.5 focus:outline-none">在 ERP 生產規劃與控制模組中，主生產排程 (MPS) 負責決定最終成品的生產數量與交期（屬於獨立需求）；而物料需求規劃 (MRP) 則根據 MPS、BOM 用料結構表以及即時庫存狀態（現有庫存、預計在途入庫量、安全庫存），透過低階碼 (Low-Level Code) 展開計算各階層半成品與原物料的淨需求量。</textarea>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2.5 pt-1">
+                            <button id="generateWithGeminiBtn" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs sm:text-sm cyber-glow transition flex items-center justify-center gap-2">
+                                <span>✨ 呼叫 Gemini 結構化生成題目</span>
+                            </button>
+                            <button id="importRawJsonBtn" type="button" class="py-2.5 px-3.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold text-xs transition" title="Edge Case 降級方案：直接解析上方文字框中的 JSON 題庫">
+                                📋 手動 JSON 解析匯入
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 右側：手動單題新增表單 (6 cols) -->
+                    <div class="lg:col-span-6 bg-slate-800/90 rounded-2xl border border-slate-700 p-6 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold">
+                                ✍️ 手動精準命題
+                            </span>
+                            <span class="text-xs text-slate-400">即時寫入 questions 集合</span>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-bold text-white">手動新增單筆 ERP 考題</h3>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">所屬關卡</label>
+                                <select id="manualLevelSelect" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2">
+                                    <!-- 由 JS 填入 -->
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">題目難度</label>
+                                <select id="manualDiffSelect" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2">
+                                    <option value="easy">簡單 Easy (概念題)</option>
+                                    <option value="medium" selected>普通 Medium (流程題)</option>
+                                    <option value="hard">困難 Hard (情境計算題)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1">題幹敘述 (Prompt)</label>
+                            <input id="manualPromptInput" type="text" placeholder="請輸入題目問題敘述..."
+                                class="w-full bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm rounded-xl px-3.5 py-2" />
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">選項 A (Index 0)</label>
+                                <input id="manualOpt0" type="text" placeholder="選項 A 內容" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2" />
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">選項 B (Index 1)</label>
+                                <input id="manualOpt1" type="text" placeholder="選項 B 內容" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2" />
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">選項 C (Index 2)</label>
+                                <input id="manualOpt2" type="text" placeholder="選項 C 內容" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2" />
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-slate-400 mb-1">選項 D (Index 3)</label>
+                                <input id="manualOpt3" type="text" placeholder="選項 D 內容" class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">正確答案選項</label>
+                                <select id="manualCorrectIdxSelect" class="w-full bg-slate-900 border border-slate-700 text-emerald-400 font-bold text-xs rounded-xl px-3 py-2">
+                                    <option value="0">選項 A (0)</option>
+                                    <option value="1">選項 B (1)</option>
+                                    <option value="2">選項 C (2)</option>
+                                    <option value="3">選項 D (3)</option>
+                                </select>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">標準觀念解析 (Explanation)</label>
+                                <input id="manualExplanationInput" type="text" placeholder="請輸入答題後的詳解說明..."
+                                    class="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2" />
+                            </div>
+                        </div>
+
+                        <button id="addManualQuestionBtn" type="button" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition">
+                            ➕ 儲存題目至題庫
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 題庫總覽列表 -->
+                <div class="bg-slate-800/90 rounded-2xl border border-slate-700 overflow-hidden">
+                    <div class="p-5 border-b border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-base font-bold text-white">📚 目前題庫總覽清單 (<span id="questionBankCountText">0</span> 題)</h3>
+                            <p class="text-xs text-slate-400">支援依關卡篩選檢視與刪除題目</p>
+                        </div>
+                        <select id="bankFilterLevelSelect" class="bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-2">
+                            <option value="ALL">顯示全部關卡題庫</option>
+                        </select>
+                    </div>
+                    <div id="questionBankListContainer" class="divide-y divide-slate-700/70 max-h-[460px] overflow-y-auto">
+                        <!-- 由 JS 渲染題庫列表 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 後台 Tab 3：關卡配置管理 (Levels CRUD) -->
+            <div id="teacherTabLevels" class="hidden space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- 新增/編輯關卡表單 (5 cols) -->
+                    <div class="lg:col-span-5 bg-slate-800/90 rounded-2xl border border-slate-700 p-6 space-y-4">
+                        <span class="px-2.5 py-1 rounded-lg bg-violet-500/20 text-violet-300 text-xs font-bold">
+                            🗺️ 建立新 ERP 試煉關卡
+                        </span>
+                        <h3 class="text-base sm:text-lg font-bold text-white">新增單元關卡 (levels)</h3>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1">關卡標題名稱</label>
+                            <input id="newLevelTitleInput" type="text" placeholder="例如：單元五：人資與薪資管理模組 (HR)"
+                                class="w-full bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm rounded-xl px-3.5 py-2.5" />
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">關卡順序 (Order)</label>
+                                <input id="newLevelOrderInput" type="number" value="5" min="1" max="99"
+                                    class="w-full bg-slate-900 border border-slate-700 text-white font-mono-num text-xs sm:text-sm rounded-xl px-3.5 py-2" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 mb-1">及格標準分數 (Pass Score)</label>
+                                <input id="newLevelPassInput" type="number" value="70" min="50" max="100" step="5"
+                                    class="w-full bg-slate-900 border border-slate-700 text-emerald-400 font-mono-num font-bold text-xs sm:text-sm rounded-xl px-3.5 py-2" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1">關卡任務簡介 (Description)</label>
+                            <textarea id="newLevelDescInput" rows="3" placeholder="描述本單元涵蓋的 ERP 流程與考驗目標..."
+                                class="w-full bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm rounded-xl p-3"></textarea>
+                        </div>
+
+                        <button id="createNewLevelBtn" type="button" class="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm cyber-glow transition">
+                            ➕ 建立並發布新關卡
+                        </button>
+                    </div>
+
+                    <!-- 現有關卡管理列表 (7 cols) -->
+                    <div class="lg:col-span-7 bg-slate-800/90 rounded-2xl border border-slate-700 p-6 space-y-4">
+                        <h3 class="text-base sm:text-lg font-bold text-white">現有 ERP 關卡配置清單</h3>
+                        <p class="text-xs text-slate-400">可即時調整各關卡的通過分數門檻（例如：答對 70% 或 80% 通過）</p>
+                        <div id="adminLevelsManageList" class="space-y-3">
+                            <!-- 由 JS 渲染關卡管理卡片 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- 自訂通用互動 Modal (用於老師後台 Passcode 通行密鑰驗證、放棄試煉確認、CSV 預覽等) -->
+    <div id="cyberModalOverlay" class="fixed inset-0 z-50 hidden bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-violet-500/50 cyber-glow space-y-4 card-enter">
+            <div class="flex items-start gap-3.5">
+                <div id="cyberModalIcon" class="w-11 h-11 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-2xl shrink-0">
+                    🔐
+                </div>
+                <div class="flex-1">
+                    <h3 id="cyberModalTitle" class="text-base font-extrabold text-white">系統安全驗證</h3>
+                    <p id="cyberModalMsg" class="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed"></p>
+                </div>
+            </div>
+            <div id="cyberModalInputArea" class="hidden"></div>
+            <div class="flex items-center justify-end gap-2.5 pt-2">
+                <button id="cyberModalCancelBtn" type="button" class="hidden px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs sm:text-sm font-semibold transition">
+                    取消
+                </button>
+                <button id="cyberModalConfirmBtn" type="button" class="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs sm:text-sm font-bold cyber-glow transition">
+                    確認
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頁尾 (Footer) -->
+    <footer class="bg-slate-900/90 border-t border-slate-800 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
+            <div class="flex items-center gap-2">
+                <span>🔮 ERP 隨堂測驗平台 (ERP Quiz Adventure)</span>
+                <span>·</span>
+                <span class="text-violet-400 font-mono-num">Cyber-RPG Vibe Coding Edition</span>
+            </div>
+            <div>
+                © 2020 TonyStudio (TONY 楊文澤顧問). All rights reserved.
+            </div>
+        </div>
+    </footer>
+
+    <!-- 核心邏輯腳本 (整合 Firebase Firestore 與 Gemini API) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ============================================================================
+        // 1. RPG 角色清單、預設關卡 (levels)、題庫 (questions) 與初始戰績 (quiz_records)
+        // ============================================================================
+        const RPG_AVATARS = [
+            {
+                id: "avatar_mage_01",
+                name: "ERP 大魔導師",
+                emoji: "🧙‍♂️",
+                trait: "精通跨模組單據拋轉與總帳分錄整合",
+                badgeColor: "from-violet-600 to-indigo-600"
+            },
+            {
+                id: "avatar_knight_02",
+                name: "庫存聖殿騎士",
+                emoji: "🛡️",
+                trait: "擅長三向比對驗證、安全庫存與盤點防護",
+                badgeColor: "from-cyan-600 to-blue-600"
+            },
+            {
+                id: "avatar_ranger_03",
+                name: "排程除錯遊俠",
+                emoji: "🏹",
+                trait: "精準執行 BOM 展開、MRP 淨需求與前置時間推算",
+                badgeColor: "from-emerald-600 to-teal-600"
+            },
+            {
+                id: "avatar_alchemist_04",
+                name: "財務煉金術師",
+                emoji: "⚗️",
+                trait: "洞察標準成本差異、統制帳戶與利潤中心分析",
+                badgeColor: "from-amber-600 to-orange-600"
+            }
+        ];
+
+        const DIFFICULTY_CONFIG = {
+            easy: { label: "簡單 Easy", multiplier: 1.0, badgeClass: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+            medium: { label: "普通 Medium", multiplier: 1.2, badgeClass: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40" },
+            hard: { label: "困難 Hard", multiplier: 1.5, badgeClass: "bg-rose-500/20 text-rose-300 border-rose-500/40" }
+        };
+
+        const DEFAULT_LEVELS = [
+            {
+                levelId: "lvl_procurement_01",
+                title: "單元一：採購與應付帳款模組 (MM/AP)",
+                order: 1,
+                description: "學習請購、採購單建立、驗收過帳 (GR)、GR/IR 暫估清算與三向比對內控流程。",
+                passScore: 70,
+                createdAt: "2025-05-18T10:00:00Z"
+            },
+            {
+                levelId: "lvl_sales_02",
+                title: "單元二：銷貨與配送管理模組 (SD/O2C)",
+                order: 2,
+                description: "挑戰客戶信用查核、ATP 可承諾量計算、發貨過帳扣帳時機與應收發票立帳。",
+                passScore: 70,
+                createdAt: "2025-05-18T10:05:00Z"
+            },
+            {
+                levelId: "lvl_mrp_03",
+                title: "單元三：生產排程與 MRP 物料需求規劃 (PP)",
+                order: 3,
+                description: "掌握獨立需求 (MPS) 與相依需求 (MRP)、BOM 低階碼運算與淨需求精算。",
+                passScore: 75,
+                createdAt: "2025-05-18T10:10:00Z"
+            },
+            {
+                levelId: "lvl_fico_04",
+                title: "單元四：財務會計與管理控制模組 (FI/CO)",
+                order: 4,
+                description: "攻略總帳統制帳戶 (Reconciliation)、明細帳連動、成本中心與標準成本差異。",
+                passScore: 75,
+                createdAt: "2025-05-18T10:15:00Z"
+            }
+        ];
+
+        const DEFAULT_QUESTIONS = [
+            // --- 關卡 1：採購與應付帳款模組 (lvl_procurement_01) ---
+            {
+                questionId: "q_1001",
+                levelId: "lvl_procurement_01",
+                difficulty: "easy",
+                prompt: "在標準 ERP 流程中，採購三向比對 (Three-way Matching) 不包含下列哪項單據？",
+                options: ["採購單 (PO)", "驗收單 (GR)", "廠商發票 (Invoice)", "生產派工單 (Work Order)"],
+                correctIndex: 3,
+                explanation: "三向比對是驗證採購單 (PO)、收貨驗收單 (GR) 與供應商發票 (Invoice) 的數量與金額是否一致；生產派工單屬於生管製造模組。"
+            },
+            {
+                questionId: "q_1002",
+                levelId: "lvl_procurement_01",
+                difficulty: "easy",
+                prompt: "為符合企業內部控制「職責分離 (Segregation of Duties)」原則，下列哪兩項作業不應由同一位人員執行？",
+                options: ["查詢庫存與列印報表", "開立採購單 (PO) 與執行收貨驗收過帳 (GR)", "建立請購單與查詢供應商地址", "閱讀系統操作手冊與修改個人密碼"],
+                correctIndex: 1,
+                explanation: "若採購下單人員可自行執行倉庫收貨驗收，將產生虛構採購交易的舞弊風險，因此 ERP 權限設計必須將採購與驗收分離。"
+            },
+            {
+                questionId: "q_1003",
+                levelId: "lvl_procurement_01",
+                difficulty: "medium",
+                prompt: "當供應商貨物已送達倉庫並完成收貨過帳 (Goods Receipt)，但供應商發票尚未寄達（料到單未到）時，ERP 系統會自動貸記哪一個會計科目？",
+                options: ["應收帳款統制科目", "GR/IR 收貨暫估應付清算科目", "銷貨成本科目", "保留盈餘科目"],
+                correctIndex: 1,
+                explanation: "收貨時系統自動產生『借：存貨 / 貸：GR/IR 暫估科目』；待發票送達校驗時再『借：GR/IR / 貸：應付帳款』，確保跨月財報帳實相符。"
+            },
+            {
+                questionId: "q_1004",
+                levelId: "lvl_procurement_01",
+                difficulty: "medium",
+                prompt: "根據 ABC 存貨價值分類法，針對「佔總採購金額 75% 以上、品項數僅佔 15%」的高價值關鍵原物料，應採何種管理策略？",
+                options: ["歸為 C 類，採雙倉制粗放管理", "歸為 A 類，執行嚴密 MRP 淨需求控管與高頻率循環盤點", "不需設定安全庫存，缺料再緊急購買", "年底再一次性人工估算即可"],
+                correctIndex: 1,
+                explanation: "A 類物料資金佔比最高，必須投入最多管理資源進行精準需求計算與嚴密盤點。"
+            },
+            {
+                questionId: "q_1005",
+                levelId: "lvl_procurement_01",
+                difficulty: "hard",
+                prompt: "【情境計算】某關鍵晶片平均每日耗用 60 顆，供應商採購前置時間 (Lead Time) 為 5 天，安全庫存設為 120 顆。請問該晶片的再訂購點 (ROP) 應設定為多少顆？",
+                options: ["300 顆", "360 顆", "420 顆", "480 顆"],
+                correctIndex: 2,
+                explanation: "再訂購點公式 ROP = (平均日耗用量 60 × 前置時間 5 天) + 安全庫存 120 = 300 + 120 = 420 顆。"
+            },
+            {
+                questionId: "q_1006",
+                levelId: "lvl_procurement_01",
+                difficulty: "hard",
+                prompt: "【情境實務】採購單約定單價 100 元、數量 10 件（標準成本亦為 100 元）。收貨 10 件後，供應商發票請款金額卻為 1,050 元（且該庫存尚未被領用），執行發票校驗過帳時，50 元差額在採移動平均價制下會如何處理？",
+                options: ["直接調整增加該批存貨帳面價值 50 元", "系統直接刪除採購單", "認列為營業外收入", "不產生任何分錄"],
+                correctIndex: 0,
+                explanation: "在移動平均價控制且存貨尚在庫中時，發票校驗的價格差異會直接吸收調整至存貨科目價值中。"
+            },
+
+            // --- 關卡 2：銷貨與配送管理模組 (lvl_sales_02) ---
+            {
+                questionId: "q_2001",
+                levelId: "lvl_sales_02",
+                difficulty: "easy",
+                prompt: "在 ERP 銷貨到收款 (Order-to-Cash) 流程中，哪一個步驟過帳後系統才會「實際扣減倉庫現有庫存 (On-Hand Inventory)」？",
+                options: ["建立客戶詢價單 (Inquiry)", "確認銷售訂單 (Sales Order)", "執行出貨單發貨過帳 (Post Goods Issue, PGI)", "列印客戶對帳單"],
+                correctIndex: 2,
+                explanation: "銷售訂單僅進行庫存預留 (Reservation)；唯有實際執行發貨過帳 (PGI) 貨物離倉時，系統才會扣減實際庫存並認列銷貨成本。"
+            },
+            {
+                questionId: "q_2002",
+                levelId: "lvl_sales_02",
+                difficulty: "easy",
+                prompt: "當系統完成銷售發票開立 (Billing) 並拋轉財務模組時，會自動產生下列哪一組分錄？",
+                options: ["借：應收帳款 ／ 貸：銷貨收入", "借：存貨 ／ 貸：應付帳款", "借：製造費用 ／ 貸：現金", "借：銷貨成本 ／ 貸：固定資產"],
+                correctIndex: 0,
+                explanation: "開立發票代表向客戶正式請款立帳，因此借記應收帳款（客戶明細帳與統制科目），貸記銷貨收入。"
+            },
+            {
+                questionId: "q_2003",
+                levelId: "lvl_sales_02",
+                difficulty: "medium",
+                prompt: "業務接單時，ERP 系統會執行「可承諾量 (ATP, Available-to-Promise)」檢查，請問 ATP 的核心邏輯為何？",
+                options: ["只看去年同期的銷售歷史", "現有庫存 + 預計入庫量（工單/採購在途） - 已分配給其他客戶訂單之保留量", "安全庫存的兩倍", "倉庫貨架的最大容積上限"],
+                correctIndex: 1,
+                explanation: "ATP 扣除已承諾給其他訂單的預留量並加上確定在途供應量，避免業務一貨二賣造成違約。"
+            },
+            {
+                questionId: "q_2004",
+                levelId: "lvl_sales_02",
+                difficulty: "medium",
+                prompt: "若客戶下單金額超過系統設定的「信用額度上限 (Credit Limit)」，標準 ERP 系統的預設內控行為為何？",
+                options: ["自動凍結該張銷售訂單 (Credit Block)，需經權責主管審核放行後方可安排出貨", "自動將公司所有庫存免費贈送給客戶", "自動刪除該名客戶主檔", "直接跳過出貨直接開立發票"],
+                correctIndex: 0,
+                explanation: "信用查核未通過時系統會執行信用凍結 (Credit Block)，阻擋後續交貨單建立，以降低呆帳風險。"
+            },
+            {
+                questionId: "q_2005",
+                levelId: "lvl_sales_02",
+                difficulty: "hard",
+                prompt: "【情境計算】倉庫目前現有庫存 200 台，本週預計完工入庫工單 150 台，但已有兩張已確認客戶訂單共預留 180 台，安全庫存保留 30 台不供銷售。請問業務目前最多可向新急單客戶承諾 (ATP) 多少台？",
+                options: ["140 台", "170 台", "200 台", "350 台"],
+                correctIndex: 0,
+                explanation: "可動用 ATP = 現有庫存 (200) + 預計入庫 (150) - 已預留訂單 (180) - 安全庫存保留 (30) = 140 台。"
+            },
+
+            // --- 關卡 3：生產排程與 MRP 物料需求規劃 (lvl_mrp_03) ---
+            {
+                questionId: "q_3001",
+                levelId: "lvl_mrp_03",
+                difficulty: "easy",
+                prompt: "執行 MRP（物料需求規劃）展開運算時，必備的「三大基本輸入資訊」為下列何者？",
+                options: ["主生產排程 (MPS)、物料清單 (BOM)、庫存狀態檔 (Inventory Status)", "員工考勤表、薪資清冊、加班申請單", "資產負債表、損益表、股東名冊", "客戶滿意度問卷、退貨原因統計表、差旅費報支單"],
+                correctIndex: 0,
+                explanation: "MRP 依據 MPS 成品排程，結合 BOM 用料結構展開毛需求，再比對即時庫存與在途量算出淨需求。"
+            },
+            {
+                questionId: "q_3002",
+                levelId: "lvl_mrp_03",
+                difficulty: "medium",
+                prompt: "關於「獨立需求 (Independent Demand)」與「相依需求 (Dependent Demand)」的區別，下列何者正確？",
+                options: ["最終銷售成品屬於獨立需求（取決於市場與客戶訂單）；而組成成品的零件與原物料屬於相依需求（由 BOM 展開計算）", "原物料屬於獨立需求，成品屬於相依需求", "兩者皆無法用電腦計算", "只有服務業才有相依需求"],
+                correctIndex: 0,
+                explanation: "MPS 規劃獨立需求（成品），MRP 則根據父件需求與 BOM 精算相依需求（半成品與原物料）。"
+            },
+            {
+                questionId: "q_3003",
+                levelId: "lvl_mrp_03",
+                difficulty: "medium",
+                prompt: "在多階 BOM 樹狀結構中，ERP 系統為每個物料指定「低階碼 (Low-Level Code, LLC)」的關鍵作用為何？",
+                options: ["代表物料的採購價格高低", "確保同時出現在不同階層的共用零件，等到最深層級才一次彙總計算毛需求與淨需求", "決定倉庫人員揀貨的步行路線", "代表供應商的信用評等"],
+                correctIndex: 1,
+                explanation: "低階碼記錄零件在 BOM 出現的最深階層，防止共用件在 MRP 展開過程中被重複多次拆單計算。"
+            },
+            {
+                questionId: "q_3004",
+                levelId: "lvl_mrp_03",
+                difficulty: "hard",
+                prompt: "【情境計算】某組件本週「毛需求」為 600 個，目前「現有可用庫存」為 150 個，「已排程在途入庫量」為 100 個，且「安全庫存」設定為 80 個。請問本週該組件的「淨需求 (Net Requirement)」為多少？",
+                options: ["270 個", "350 個", "430 個", "600 個"],
+                correctIndex: 2,
+                explanation: "淨需求 = 毛需求 (600) - [現有庫存 (150) + 在途入庫 (100)] + 安全庫存 (80) = 600 - 250 + 80 = 430 個。"
+            },
+            {
+                questionId: "q_3005",
+                levelId: "lvl_mrp_03",
+                difficulty: "hard",
+                prompt: "【情境計算】承上題，若生產 1 台 A 成品需要 2 個 B 組件，每個 B 組件需要 3 顆 C 螺絲（BOM 標準損耗率為 0%）。當 MPS 排定生產 100 台 A 成品，且 B 組件與 C 螺絲目前皆無任何庫存與在途量，請問 C 螺絲的毛需求量為多少顆？",
+                options: ["200 顆", "300 顆", "500 顆", "600 顆"],
+                correctIndex: 3,
+                explanation: "100 台 A 需要 100 × 2 = 200 個 B 組件；200 個 B 組件需要 200 × 3 = 600 顆 C 螺絲。"
+            },
+
+            // --- 關卡 4：財務會計與管理控制模組 (lvl_fico_04) ---
+            {
+                questionId: "q_4001",
+                levelId: "lvl_fico_04",
+                difficulty: "easy",
+                prompt: "在 ERP 財務模組中，「財務會計 (FI)」與「管理控制 (CO)」的主要服務對象差異為何？",
+                options: ["FI 面向外部法定財報（股東、銀行、稅務機關）；CO 面向內部經營管理層（成本控管與獲利決策）", "FI 只管倉庫盤點；CO 只管業務跑客戶", "兩者完全相同沒有差異", "FI 不需要遵守會計準則"],
+                correctIndex: 0,
+                explanation: "FI 遵循 IFRS/GAAP 產出外部資產負債表與損益表；CO 則提供內部成本中心與產品獲利分析。"
+            },
+            {
+                questionId: "q_4002",
+                levelId: "lvl_fico_04",
+                difficulty: "medium",
+                prompt: "關於 ERP 總分類帳中的「統制帳戶 (Reconciliation Account，如應收帳款統制科目)」，下列敘述何者正確？",
+                options: ["會計人員可隨時手動直接對統制科目輸入調整分錄", "禁止直接手動過帳，只能透過客戶/供應商明細分類帳 (Sub-ledger) 交易時由系統即時自動同步更新", "月底才由人工用計算機加總明細帳填入", "只用來記錄零用金支出"],
+                correctIndex: 1,
+                explanation: "統制帳戶連結明細帳與總帳，禁止人工直接切傳票，從根本上杜絕總帳與明細帳金額不平的問題。"
+            },
+            {
+                questionId: "q_4003",
+                levelId: "lvl_fico_04",
+                difficulty: "medium",
+                prompt: "當製造部門向倉庫執行「生產工單領料過帳 (Goods Issue to Production Order)」時，FI 與 CO 模組會即時發生何種連動？",
+                options: ["FI 借記生產成本投入、貸記原物料存貨；同時 CO 即時將該筆材料成本歸集至該張生產工單成本物件", "不會產生任何財務分錄", "系統會自動開立銷貨發票給客戶", "系統會自動發放員工年終獎金"],
+                correctIndex: 0,
+                explanation: "業務單據過帳瞬間同步觸發 FI 總帳傳票與 CO 成本物件歸屬，實現帳實即時合一。"
+            },
+            {
+                questionId: "q_4004",
+                levelId: "lvl_fico_04",
+                difficulty: "hard",
+                prompt: "【情境計算】某產品設定標準單價為每公斤 50 元，某工單標準應耗用 100 公斤；實際生產時每公斤採購價為 52 元，實際領用 110 公斤。請問該工單的「材料用量差異 (Quantity Variance，以標準價衡量)」為多少？",
+                options: ["不利差異 500 元", "不利差異 220 元", "有利差異 500 元", "無任何差異"],
+                correctIndex: 0,
+                explanation: "材料用量差異 = (實際用量 110 - 標準用量 100) × 標準單價 50 元 = +10 × 50 = 500 元（超耗，屬於不利差異 Unfavorable）。"
+            }
+        ];
+
+        const INITIAL_QUIZ_RECORDS = [
+            {
+                recordId: "rec_20250518_001",
+                studentName: "Alex (B112088)",
+                avatarId: "avatar_mage_01",
+                levelId: "lvl_procurement_01",
+                difficulty: "medium",
+                score: 85,
+                totalQuestions: 5,
+                correctCount: 4,
+                timeSpentSeconds: 95,
+                wrongQuestions: ["q_1005"],
+                completedAt: "2025-05-18T10:30:00Z"
+            },
+            {
+                recordId: "rec_20250518_002",
+                studentName: "Chloe (B112019)",
+                avatarId: "avatar_knight_02",
+                levelId: "lvl_sales_02",
+                difficulty: "hard",
+                score: 100,
+                totalQuestions: 5,
+                correctCount: 5,
+                timeSpentSeconds: 112,
+                wrongQuestions: [],
+                completedAt: "2025-05-18T11:15:00Z"
+            },
+            {
+                recordId: "rec_20250518_003",
+                studentName: "Ryan (B112042)",
+                avatarId: "avatar_ranger_03",
+                levelId: "lvl_mrp_03",
+                difficulty: "medium",
+                score: 60,
+                totalQuestions: 5,
+                correctCount: 3,
+                timeSpentSeconds: 138,
+                wrongQuestions: ["q_3003", "q_3004"],
+                completedAt: "2025-05-18T11:45:00Z"
+            },
+            {
+                recordId: "rec_20250518_004",
+                studentName: "Mia (B112065)",
+                avatarId: "avatar_alchemist_04",
+                levelId: "lvl_fico_04",
+                difficulty: "hard",
+                score: 80,
+                totalQuestions: 5,
+                correctCount: 4,
+                timeSpentSeconds: 120,
+                wrongQuestions: ["q_4004"],
+                completedAt: "2025-05-18T12:10:00Z"
+            }
+        ];
+
+        // ============================================================================
+        // 2. 全域狀態管理 (Global State)
+        // ============================================================================
+        const state = {
+            mode: "student", // 'student' | 'teacher'
+            isTeacherAuthenticated: false,
+            teacherPasscode: "8888", // 老師後台通行密鑰 (Passcode)
+
+            // 學生個人設定
+            studentName: "Alex (B112088)",
+            selectedAvatarId: "avatar_mage_01",
+            selectedDifficulty: "medium", // 'easy' | 'medium' | 'hard'
+            targetQuestionCount: 5,
+
+            // 資料集合 (由預設資料初始化，並與 Firestore 即時同步)
+            levels: [...DEFAULT_LEVELS],
+            questions: [...DEFAULT_QUESTIONS],
+            quizRecords: [...INITIAL_QUIZ_RECORDS],
+
+            // 當前戰鬥試煉狀態 (Battle State)
+            activeBattle: null, // 若進行中則儲存完整戰鬥物件
+            battleTimerInterval: null,
+            isSubmittingQuiz: false, // 防作弊與連點 (Spamming Debounce)
+
+            // 最近一次結算資料 (供 Gemini AI 錯題導師分析)
+            lastSettlement: null,
+
+            // Chart.js 實例
+            radarChartInstance: null,
+
+            // Firebase 狀態
+            db: null,
+            auth: null,
+            user: null,
+            appId: typeof __app_id !== "undefined" ? __app_id : "erp-quiz-adventure-app",
+            isCloudReady: false
+        };
+
+        // ============================================================================
+        // 3. 工具函式：Toast 通知與自訂 Cyber Modal (禁止使用原生 alert/confirm)
+        // ============================================================================
+        function showToast(message, type = "info") {
+            const container = document.getElementById("toastContainer");
+            const toast = document.createElement("div");
+            let colors = "bg-slate-800/95 border-violet-500/50 text-slate-100";
+            let icon = "🔮";
+            if (type === "warn") {
+                colors = "bg-amber-950/95 border-amber-500/60 text-amber-200";
+                icon = "⚠️";
+            } else if (type === "success") {
+                colors = "bg-emerald-950/95 border-emerald-500/60 text-emerald-200";
+                icon = "✅";
+            } else if (type === "error") {
+                colors = "bg-rose-950/95 border-rose-500/60 text-rose-200";
+                icon = "🚨";
+            }
+
+            toast.className = `pointer-events-auto p-3.5 rounded-2xl border shadow-xl flex items-start gap-2.5 text-xs sm:text-sm card-enter ${colors}`;
+            toast.innerHTML = `
+                <span class="text-base shrink-0">${icon}</span>
+                <div class="flex-1 leading-relaxed font-medium">${message}</div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = "0";
+                toast.style.transition = "opacity 0.3s ease";
+                setTimeout(() => toast.remove(), 300);
+            }, 4200);
+        }
+
+        let modalOnConfirm = null;
+        let modalOnCancel = null;
+
+        function openCyberModal({ icon = "🔮", title = "系統提示", message = "", inputHtml = "", confirmText = "確認", cancelText = null, onConfirm = null, onCancel = null }) {
+            document.getElementById("cyberModalIcon").textContent = icon;
+            document.getElementById("cyberModalTitle").textContent = title;
+            document.getElementById("cyberModalMsg").textContent = message;
+
+            const inputArea = document.getElementById("cyberModalInputArea");
+            if (inputHtml) {
+                inputArea.innerHTML = inputHtml;
+                inputArea.classList.remove("hidden");
+            } else {
+                inputArea.innerHTML = "";
+                inputArea.classList.add("hidden");
+            }
+
+            const confirmBtn = document.getElementById("cyberModalConfirmBtn");
+            const cancelBtn = document.getElementById("cyberModalCancelBtn");
+            confirmBtn.textContent = confirmText;
+
+            if (cancelText) {
+                cancelBtn.textContent = cancelText;
+                cancelBtn.classList.remove("hidden");
+            } else {
+                cancelBtn.classList.add("hidden");
+            }
+
+            modalOnConfirm = onConfirm;
+            modalOnCancel = onCancel;
+            document.getElementById("cyberModalOverlay").classList.remove("hidden");
+        }
+
+        function closeCyberModal() {
+            document.getElementById("cyberModalOverlay").classList.add("hidden");
+            modalOnConfirm = null;
+            modalOnCancel = null;
+        }
+
+        document.getElementById("cyberModalConfirmBtn").addEventListener("click", () => {
+            const cb = modalOnConfirm;
+            closeCyberModal();
+            if (typeof cb === "function") cb();
+        });
+
+        document.getElementById("cyberModalCancelBtn").addEventListener("click", () => {
+            const cb = modalOnCancel;
+            closeCyberModal();
+            if (typeof cb === "function") cb();
+        });
+
+        // ============================================================================
+        // 4. Firebase Firestore 初始化與雲端即時同步 (嚴格遵守 RULE 1, 2, 3)
+        // ============================================================================
+        async function initFirebaseCloud() {
+            try {
+                if (typeof __firebase_config === "undefined" || !__firebase_config) {
+                    updateCloudBadge(false, "單機冒險模式");
+                    return;
+                }
+
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                state.db = getFirestore(app);
+                state.auth = getAuth(app);
+
+                // RULE 3: Auth Before Queries
+                if (typeof __initial_auth_token !== "undefined" && __initial_auth_token) {
+                    await signInWithCustomToken(state.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(state.auth);
+                }
+
+                onAuthStateChanged(state.auth, async (user) => {
+                    state.user = user;
+                    if (user) {
+                        state.isCloudReady = true;
+                        updateCloudBadge(true, "雲端即時同步中");
+                        await seedInitialCloudData();
+                        setupCloudListeners();
+                    }
+                });
+            } catch (err) {
+                console.warn("Firebase 連線轉為本機快取模式:", err);
+                state.isCloudReady = false;
+                updateCloudBadge(false, "離線快取保護模式");
+            }
+        }
+
+        function updateCloudBadge(isOnline, text) {
+            const dot = document.getElementById("cloudStatusDot");
+            const label = document.getElementById("cloudStatusText");
+            label.textContent = text;
+            dot.className = isOnline
+                ? "w-1.5 h-1.5 rounded-full bg-emerald-400"
+                : "w-1.5 h-1.5 rounded-full bg-amber-400";
+        }
+
+        // RULE 1: 使用標準路徑 /artifacts/{appId}/public/data/{collectionName}
+        function getColRef(collectionName) {
+            return collection(state.db, "artifacts", state.appId, "public", "data", collectionName);
+        }
+
+        function getDocRef(collectionName, docId) {
+            return doc(state.db, "artifacts", state.appId, "public", "data", collectionName, docId);
+        }
+
+        async function seedInitialCloudData() {
+            if (!state.user || !state.db) return;
+            try {
+                const lvlSnap = await getDocs(getColRef("levels"));
+                if (lvlSnap.empty) {
+                    for (const lvl of DEFAULT_LEVELS) {
+                        await setDoc(getDocRef("levels", lvl.levelId), lvl);
+                    }
+                }
+                const qSnap = await getDocs(getColRef("questions"));
+                if (qSnap.empty) {
+                    for (const q of DEFAULT_QUESTIONS) {
+                        await setDoc(getDocRef("questions", q.questionId), q);
+                    }
+                }
+                const recSnap = await getDocs(getColRef("quiz_records"));
+                if (recSnap.empty) {
+                    for (const rec of INITIAL_QUIZ_RECORDS) {
+                        await setDoc(getDocRef("quiz_records", rec.recordId), rec);
+                    }
+                }
+            } catch (e) {
+                console.warn("初始化雲端預設資料略過:", e);
+            }
+        }
+
+        function setupCloudListeners() {
+            if (!state.user || !state.db) return;
+
+            // 監聽關卡集合 (levels)
+            onSnapshot(
+                getColRef("levels"),
+                (snap) => {
+                    const list = [];
+                    snap.forEach((d) => list.push(d.data()));
+                    if (list.length > 0) {
+                        list.sort((a, b) => (a.order || 1) - (b.order || 1));
+                        state.levels = list;
+                        refreshAllViews();
+                    }
+                },
+                (err) => console.warn("levels 監聽略過:", err)
+            );
+
+            // 監聽題目集合 (questions)
+            onSnapshot(
+                getColRef("questions"),
+                (snap) => {
+                    const list = [];
+                    snap.forEach((d) => list.push(d.data()));
+                    if (list.length > 0) {
+                        state.questions = list;
+                        refreshAllViews();
+                    }
+                },
+                (err) => console.warn("questions 監聽略過:", err)
+            );
+
+            // 監聽測驗成果集合 (quiz_records)
+            onSnapshot(
+                getColRef("quiz_records"),
+                (snap) => {
+                    const list = [];
+                    snap.forEach((d) => list.push(d.data()));
+                    if (list.length > 0) {
+                        list.sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
+                        state.quizRecords = list;
+                        refreshAllViews();
+                    }
+                },
+                (err) => console.warn("quiz_records 監聽略過:", err)
+            );
+        }
+
+        async function saveDocToCloud(collectionName, docId, payload) {
+            if (!state.user || !state.db || !state.isCloudReady) return;
+            try {
+                await setDoc(getDocRef(collectionName, docId), payload);
+            } catch (err) {
+                console.warn(`寫入 ${collectionName} 失敗:`, err);
+            }
+        }
+
+        // ============================================================================
+        // 5. 試煉進度中斷保護 (Edge Case: 重新整理網頁或中途斷網恢復繼續試煉)
+        // ============================================================================
+        let inMemoryBackupSession = null;
+
+        function saveBattleProgressCheckpoint() {
+            if (!state.activeBattle) return;
+            inMemoryBackupSession = JSON.parse(JSON.stringify(state.activeBattle));
+            try {
+                window.sessionStorage.setItem("erp_adventure_checkpoint", JSON.stringify(state.activeBattle));
+            } catch (e) {
+                // 忽略沙盒存取限制
+            }
+        }
+
+        function clearBattleProgressCheckpoint() {
+            inMemoryBackupSession = null;
+            try {
+                window.sessionStorage.removeItem("erp_adventure_checkpoint");
+            } catch (e) {}
+            document.getElementById("resumeSessionBanner").classList.add("hidden");
+        }
+
+        function checkSavedBattleCheckpoint() {
+            let saved = inMemoryBackupSession;
+            if (!saved) {
+                try {
+                    const raw = window.sessionStorage.getItem("erp_adventure_checkpoint");
+                    if (raw) saved = JSON.parse(raw);
+                } catch (e) {}
+            }
+            if (saved && saved.questions && saved.currentIndex < saved.questions.length) {
+                const lvl = state.levels.find((l) => l.levelId === saved.levelId);
+                document.getElementById("resumeSessionText").textContent =
+                    `偵測到「${saved.studentName}」在【${lvl ? lvl.title : saved.levelId}】尚有未完成的試煉（進度 ${saved.currentIndex + 1}/${saved.questions.length} 題），是否立即恢復挑戰？`;
+                document.getElementById("resumeSessionBanner").classList.remove("hidden");
+
+                document.getElementById("resumeConfirmBtn").onclick = () => {
+                    document.getElementById("resumeSessionBanner").classList.add("hidden");
+                    state.activeBattle = saved;
+                    enterBattleArenaUI();
+                };
+                document.getElementById("resumeDiscardBtn").onclick = () => {
+                    clearBattleProgressCheckpoint();
+                };
+            }
+        }
+
+        // ============================================================================
+        // 6. 學生端：角色化身、難度設定、關卡大廳與英雄榜渲染
+        // ============================================================================
+        function renderAvatarSelector() {
+            const grid = document.getElementById("avatarSelectorGrid");
+            grid.innerHTML = RPG_AVATARS.map((av) => {
+                const isSelected = av.id === state.selectedAvatarId;
+                return `
+                    <button type="button" data-avatar-id="${av.id}"
+                        class="p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                                ? "bg-violet-600/25 border-violet-400 cyber-glow text-white"
+                                : "bg-slate-900/80 border-slate-700/80 text-slate-300 hover:border-slate-500"
+                        }">
+                        <span class="text-2xl select-none">${av.emoji}</span>
+                        <div class="overflow-hidden">
+                            <div class="text-xs font-bold truncate">${av.name}</div>
+                            <div class="text-[10px] text-cyan-400 font-mono-num">${isSelected ? "✓ 已裝備" : "點擊切換"}</div>
+                        </div>
+                    </button>
+                `;
+            }).join("");
+
+            grid.querySelectorAll("button").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    state.selectedAvatarId = btn.getAttribute("data-avatar-id");
+                    renderAvatarSelector();
+                    updateHeroHeaderBadge();
+                });
+            });
+
+            const currentAvatar = RPG_AVATARS.find((a) => a.id === state.selectedAvatarId) || RPG_AVATARS[0];
+            document.getElementById("heroClassTag").textContent = currentAvatar.name;
+            document.getElementById("avatarTraitText").textContent = currentAvatar.trait;
+        }
+
+        function renderDifficultySelector() {
+            const buttons = document.querySelectorAll("#difficultySelectorGroup .diff-btn");
+            buttons.forEach((btn) => {
+                const diff = btn.getAttribute("data-diff");
+                if (diff === state.selectedDifficulty) {
+                    btn.className = "diff-btn p-3 rounded-xl border border-cyan-400 bg-cyan-500/20 text-white cyber-glow-cyan text-center transition flex flex-col items-center gap-1";
+                } else {
+                    btn.className = "diff-btn p-3 rounded-xl border border-slate-700 bg-slate-900/80 text-slate-300 hover:border-slate-500 text-center transition flex flex-col items-center gap-1";
+                }
+                btn.onclick = () => {
+                    state.selectedDifficulty = diff;
+                    const cfg = DIFFICULTY_CONFIG[diff];
+                    document.getElementById("difficultyMultiplierBadge").textContent = `計分倍率 x${cfg.multiplier.toFixed(1)}`;
+                    renderDifficultySelector();
+                };
+            });
+        }
+
+        function updateHeroHeaderBadge() {
+            const currentAvatar = RPG_AVATARS.find((a) => a.id === state.selectedAvatarId) || RPG_AVATARS[0];
+            const nameVal = document.getElementById("studentNameInput").value.trim() || "Alex";
+            state.studentName = nameVal;
+
+            // 統計該學生的累積經驗與通關數
+            const myRecords = state.quizRecords.filter(
+                (r) => (r.studentName || "").toLowerCase() === nameVal.toLowerCase()
+            );
+            const totalExp = myRecords.reduce((acc, r) => acc + Math.round((r.score || 0) * 1.2), 0);
+            const heroLv = Math.max(1, Math.floor(totalExp / 200) + 1);
+            const clearedSet = new Set(myRecords.filter((r) => (r.score || 0) >= 70).map((r) => r.levelId));
+
+            document.getElementById("navHeroEmoji").textContent = currentAvatar.emoji;
+            document.getElementById("navHeroName").textContent = nameVal;
+            document.getElementById("navHeroLv").textContent = heroLv;
+            document.getElementById("navHeroExp").textContent = totalExp;
+
+            document.getElementById("statClearedCount").textContent = `${clearedSet.size} / ${state.levels.length}`;
+            document.getElementById("statTotalExp").textContent = totalExp;
+            const expPct = Math.min(100, Math.max(12, (totalExp % 200) / 2));
+            document.getElementById("heroExpBar").style.width = `${expPct}%`;
+        }
+
+        function renderLevelsMap() {
+            document.getElementById("lobbyTotalQuestionsCount").textContent = `${state.questions.length} 題`;
+            const mapGrid = document.getElementById("levelsMapGrid");
+            const nameVal = (document.getElementById("studentNameInput").value.trim() || "Alex").toLowerCase();
+
+            mapGrid.innerHTML = state.levels.map((lvl, idx) => {
+                const lvlQuestions = state.questions.filter((q) => q.levelId === lvl.levelId);
+                const easyCount = lvlQuestions.filter((q) => q.difficulty === "easy").length;
+                const medCount = lvlQuestions.filter((q) => q.difficulty === "medium").length;
+                const hardCount = lvlQuestions.filter((q) => q.difficulty === "hard").length;
+
+                // 檢查該學生在此關卡的最高分
+                const myLvlRecs = state.quizRecords.filter(
+                    (r) => r.levelId === lvl.levelId && (r.studentName || "").toLowerCase() === nameVal
+                );
+                const bestScore = myLvlRecs.length > 0 ? Math.max(...myLvlRecs.map((r) => r.score || 0)) : null;
+                const isPassed = bestScore !== null && bestScore >= (lvl.passScore || 70);
+
+                const statusBadge = isPassed
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-mono-num font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">★ 已通關 (最高 ${bestScore} 分)</span>`
+                    : bestScore !== null
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-mono-num font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">挑戰中 (最高 ${bestScore} 分)</span>`
+                    : `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-mono-num font-bold bg-slate-700 text-slate-300">尚未挑戰</span>`;
+
+                const levelIcons = ["🛡️", "⚡", "⚙️", "💎", "🚀", "🔮"];
+                const icon = levelIcons[idx % levelIcons.length];
+
+                return `
+                    <div class="bg-slate-900/90 rounded-2xl border border-slate-700/90 hover:border-violet-500/70 p-5 flex flex-col justify-between transition group">
+                        <div>
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <span class="text-xs font-mono-num font-bold text-violet-400">STAGE 0${lvl.order || idx + 1}</span>
+                                ${statusBadge}
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <div class="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-2xl shrink-0 group-hover:scale-105 transition">
+                                    ${icon}
+                                </div>
+                                <div>
+                                    <h3 class="text-base font-extrabold text-white group-hover:text-violet-300 transition">${lvl.title}</h3>
+                                    <p class="text-xs text-slate-400 mt-1 leading-relaxed">${lvl.description}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 pt-3.5 border-t border-slate-800 space-y-3">
+                            <div class="flex items-center justify-between text-[11px] font-mono-num text-slate-400">
+                                <span>及格門檻：<strong class="text-emerald-400">${lvl.passScore || 70} 分</strong></span>
+                                <span>題庫：🌱${easyCount} · ⚔️${medCount} · 🐉${hardCount}</span>
+                            </div>
+                            <button type="button" data-start-level="${lvl.levelId}"
+                                class="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs sm:text-sm cyber-glow transition flex items-center justify-center gap-2">
+                                <span>⚔️ 進入關卡試煉</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            mapGrid.querySelectorAll("button[data-start-level]").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const levelId = btn.getAttribute("data-start-level");
+                    startLevelAdventure(levelId);
+                });
+            });
+        }
+
+        function renderStudentLeaderboard() {
+            const tbody = document.getElementById("studentLeaderboardBody");
+            const recent = state.quizRecords.slice(0, 8);
+
+            if (recent.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">尚無冒險紀錄，成為第一位通關者吧！</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = recent.map((rec) => {
+                const av = RPG_AVATARS.find((a) => a.id === rec.avatarId) || RPG_AVATARS[0];
+                const lvl = state.levels.find((l) => l.levelId === rec.levelId);
+                const diffCfg = DIFFICULTY_CONFIG[rec.difficulty] || DIFFICULTY_CONFIG.medium;
+                const scoreColor = rec.score >= 80 ? "text-emerald-400" : rec.score >= 60 ? "text-cyan-400" : "text-rose-400";
+
+                return `
+                    <tr class="hover:bg-slate-900/60 transition">
+                        <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">
+                            <span class="mr-1.5">${av.emoji}</span>${rec.studentName}
+                        </td>
+                        <td class="py-2.5 px-3 text-slate-300 truncate max-w-[200px]">
+                            ${lvl ? lvl.title : rec.levelId}
+                        </td>
+                        <td class="py-2.5 px-3">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono-num font-bold border ${diffCfg.badgeClass}">
+                                ${(rec.difficulty || "medium").toUpperCase()}
+                            </span>
+                        </td>
+                        <td class="py-2.5 px-3 font-mono-num text-slate-300">
+                            ${rec.correctCount}/${rec.totalQuestions}
+                        </td>
+                        <td class="py-2.5 px-3 font-mono-num font-extrabold ${scoreColor}">
+                            ${rec.score} 分
+                        </td>
+                        <td class="py-2.5 px-3 font-mono-num text-slate-400">
+                            ${rec.timeSpentSeconds}s
+                        </td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        // ============================================================================
+        // 7. 隨堂測驗抽題引擎 (含 Edge Case：題目池數量不足自動降階補足 + 選項亂數排列)
+        // ============================================================================
+        function shuffleArray(arr) {
+            const copy = [...arr];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        function startLevelAdventure(levelId) {
+            const studentName = document.getElementById("studentNameInput").value.trim();
+            if (!studentName) {
+                openCyberModal({
+                    icon: "🪪",
+                    title: "請先登錄挑戰者暱稱",
+                    message: "進入關卡試煉前，請於左側「STEP 1 · 挑戰者化身」輸入您的學號或暱稱！",
+                    confirmText: "立即填寫",
+                    onConfirm: () => document.getElementById("studentNameInput").focus()
+                });
+                return;
+            }
+
+            state.studentName = studentName;
+            state.targetQuestionCount = parseInt(document.getElementById("quizQuestionCountSelect").value, 10) || 5;
+
+            const allLevelQuestions = state.questions.filter((q) => q.levelId === levelId);
+            if (allLevelQuestions.length === 0) {
+                showToast("此關卡目前尚無題目，請通知老師於後台新增題庫！", "error");
+                return;
+            }
+
+            // 1. 優先抽取符合所選難度的題目
+            const targetDiff = state.selectedDifficulty;
+            let matchedPool = shuffleArray(allLevelQuestions.filter((q) => q.difficulty === targetDiff));
+            let selectedQuestions = matchedPool.slice(0, state.targetQuestionCount);
+
+            // Edge Case 1：題目池數量不足時「自動降階補足機制」
+            if (selectedQuestions.length < state.targetQuestionCount) {
+                const needed = state.targetQuestionCount - selectedQuestions.length;
+                const otherDifficultyPool = shuffleArray(
+                    allLevelQuestions.filter((q) => q.difficulty !== targetDiff)
+                );
+                const supplemental = otherDifficultyPool.slice(0, needed);
+                selectedQuestions = [...selectedQuestions, ...supplemental];
+
+                showToast(
+                    `【自動降階補足啟動】該關卡「${targetDiff.toUpperCase()}」難度題數為 ${matchedPool.length} 題，系統已自動調用同關卡其他難度題目遞補至 ${selectedQuestions.length} 題！`,
+                    "warn"
+                );
+            }
+
+            // 2. 將每題的四個選項進行亂數排列，並重新對應 correctIndex
+            const preparedQuestions = selectedQuestions.map((q) => {
+                const indexedOptions = q.options.map((optText, idx) => ({
+                    text: optText,
+                    isCorrect: idx === Number(q.correctIndex)
+                }));
+                const shuffledOpts = shuffleArray(indexedOptions);
+                return {
+                    questionId: q.questionId,
+                    difficulty: q.difficulty,
+                    prompt: q.prompt,
+                    options: shuffledOpts.map((o) => o.text),
+                    correctIndex: shuffledOpts.findIndex((o) => o.isCorrect),
+                    explanation: q.explanation
+                };
+            });
+
+            state.activeBattle = {
+                levelId: levelId,
+                studentName: studentName,
+                avatarId: state.selectedAvatarId,
+                difficulty: targetDiff,
+                questions: preparedQuestions,
+                currentIndex: 0,
+                hp: 100,
+                combo: 0,
+                correctCount: 0,
+                wrongQuestionIds: [],
+                answerLogs: [],
+                elapsedSeconds: 0,
+                isCurrentAnswered: false
+            };
+
+            saveBattleProgressCheckpoint();
+            enterBattleArenaUI();
+        }
+
+        function enterBattleArenaUI() {
+            document.getElementById("studentLobbySection").classList.add("hidden");
+            document.getElementById("studentResultSection").classList.add("hidden");
+            document.getElementById("studentBattleSection").classList.remove("hidden");
+
+            const b = state.activeBattle;
+            const av = RPG_AVATARS.find((a) => a.id === b.avatarId) || RPG_AVATARS[0];
+            const lvl = state.levels.find((l) => l.levelId === b.levelId);
+
+            document.getElementById("battleAvatarBox").textContent = av.emoji;
+            document.getElementById("battlePlayerName").textContent = b.studentName;
+            document.getElementById("battleDiffBadge").textContent = b.difficulty.toUpperCase();
+            document.getElementById("battleLevelTitle").textContent = lvl ? lvl.title : b.levelId;
+
+            // 啟動計時器
+            if (state.battleTimerInterval) clearInterval(state.battleTimerInterval);
+            updateTimerDisplay(b.elapsedSeconds);
+            state.battleTimerInterval = setInterval(() => {
+                if (!state.activeBattle) return;
+                state.activeBattle.elapsedSeconds++;
+                updateTimerDisplay(state.activeBattle.elapsedSeconds);
+            }, 1000);
+
+            renderCurrentBattleQuestion();
+        }
+
+        function updateTimerDisplay(sec) {
+            const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+            const ss = String(sec % 60).padStart(2, "0");
+            document.getElementById("battleTimerText").textContent = `${mm}:${ss}`;
+        }
+
+        function updateBattleHudStatus() {
+            const b = state.activeBattle;
+            if (!b) return;
+
+            document.getElementById("battleHpText").textContent = `HP ${b.hp} / 100`;
+            const hpBar = document.getElementById("battleHpBar");
+            hpBar.style.width = `${b.hp}%`;
+            if (b.hp > 50) {
+                hpBar.className = "h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300";
+            } else if (b.hp > 25) {
+                hpBar.className = "h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-300";
+            } else {
+                hpBar.className = "h-full rounded-full bg-gradient-to-r from-rose-600 to-orange-500 transition-all duration-300";
+            }
+
+            document.getElementById("battleComboText").textContent = `${b.combo} 🔥`;
+
+            const total = b.questions.length;
+            const currentNum = b.currentIndex + 1;
+            document.getElementById("battleProgressText").textContent = `Encounter ${currentNum} / ${total}`;
+            document.getElementById("battleProgressBar").style.width = `${Math.round((currentNum / total) * 100)}%`;
+        }
+
+        function renderCurrentBattleQuestion() {
+            const b = state.activeBattle;
+            if (!b) return;
+
+            b.isCurrentAnswered = false;
+            updateBattleHudStatus();
+
+            const q = b.questions[b.currentIndex];
+            const diffCfg = DIFFICULTY_CONFIG[q.difficulty] || DIFFICULTY_CONFIG.medium;
+
+            const diffPill = document.getElementById("questionDiffPill");
+            diffPill.textContent = `題目難度：${diffCfg.label}`;
+            diffPill.className = `px-2.5 py-1 rounded-lg text-xs font-mono-num font-bold border ${diffCfg.badgeClass}`;
+
+            document.getElementById("questionIdLabel").textContent = `#${q.questionId.toUpperCase()}`;
+            document.getElementById("battleQuestionPrompt").textContent = q.prompt;
+
+            document.getElementById("instantFeedbackBox").classList.add("hidden");
+
+            const nextBtn = document.getElementById("nextOrFinishBattleBtn");
+            nextBtn.disabled = true;
+            const isLast = b.currentIndex === b.questions.length - 1;
+            document.getElementById("nextOrFinishBtnText").textContent = isLast
+                ? "⚡ 完成試煉並結算戰果"
+                : "前往下一道試煉";
+
+            const labels = ["A", "B", "C", "D"];
+            const optionsContainer = document.getElementById("battleOptionsList");
+            optionsContainer.innerHTML = q.options.map((optText, idx) => `
+                <button type="button" data-opt-idx="${idx}"
+                    class="battle-opt-btn w-full p-4 rounded-xl border border-slate-700 bg-slate-900/90 hover:border-violet-500 hover:bg-slate-800 text-left transition flex items-start gap-3.5 group">
+                    <span class="w-7 h-7 rounded-lg bg-slate-800 group-hover:bg-violet-600 text-slate-300 group-hover:text-white font-mono-num font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 transition">
+                        ${labels[idx] || idx + 1}
+                    </span>
+                    <span class="text-sm sm:text-base text-slate-100 font-medium leading-relaxed flex-1">${optText}</span>
+                </button>
+            `).join("");
+
+            optionsContainer.querySelectorAll(".battle-opt-btn").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    if (b.isCurrentAnswered) return;
+                    const chosenIdx = parseInt(btn.getAttribute("data-opt-idx"), 10);
+                    handleAnswerSelection(chosenIdx);
+                });
+            });
+        }
+
+        function handleAnswerSelection(chosenIdx) {
+            const b = state.activeBattle;
+            if (!b || b.isCurrentAnswered) return;
+            b.isCurrentAnswered = true;
+
+            const q = b.questions[b.currentIndex];
+            const isCorrect = chosenIdx === q.correctIndex;
+
+            if (isCorrect) {
+                b.correctCount++;
+                b.combo++;
+            } else {
+                b.combo = 0;
+                b.hp = Math.max(0, b.hp - 25);
+                if (!b.wrongQuestionIds.includes(q.questionId)) {
+                    b.wrongQuestionIds.push(q.questionId);
+                }
+                // 觸發受擊震動特效
+                const hud = document.getElementById("battleHudCard");
+                hud.classList.remove("shake-anim");
+                void hud.offsetWidth;
+                hud.classList.add("shake-anim");
+            }
+
+            b.answerLogs.push({
+                questionId: q.questionId,
+                prompt: q.prompt,
+                chosenOption: q.options[chosenIdx],
+                correctOption: q.options[q.correctIndex],
+                isCorrect: isCorrect,
+                explanation: q.explanation
+            });
+
+            updateBattleHudStatus();
+
+            // 鎖定選項並標示顏色
+            const optBtns = document.querySelectorAll("#battleOptionsList .battle-opt-btn");
+            optBtns.forEach((btn, idx) => {
+                btn.disabled = true;
+                if (idx === q.correctIndex) {
+                    btn.className = "battle-opt-btn w-full p-4 rounded-xl border-2 border-emerald-500 bg-emerald-950/50 text-left flex items-start gap-3.5";
+                } else if (idx === chosenIdx && !isCorrect) {
+                    btn.className = "battle-opt-btn w-full p-4 rounded-xl border-2 border-rose-500 bg-rose-950/50 text-left flex items-start gap-3.5 opacity-90";
+                } else {
+                    btn.className = "battle-opt-btn w-full p-4 rounded-xl border border-slate-800 bg-slate-900/40 text-left flex items-start gap-3.5 opacity-45";
+                }
+            });
+
+            // 顯示即時解析反饋
+            const fbBox = document.getElementById("instantFeedbackBox");
+            const fbTitle = document.getElementById("instantFeedbackTitle");
+            const fbExp = document.getElementById("instantFeedbackExp");
+
+            fbBox.classList.remove("hidden");
+            if (isCorrect) {
+                fbBox.className = "p-4 rounded-xl border border-emerald-500/50 bg-emerald-950/40 space-y-1.5 card-enter";
+                fbTitle.className = "text-sm font-extrabold text-emerald-400";
+                fbTitle.textContent = `⚔️ 暴擊命中！觀念正確 (Combo x${b.combo})`;
+            } else {
+                fbBox.className = "p-4 rounded-xl border border-rose-500/50 bg-rose-950/40 space-y-1.5 card-enter";
+                fbTitle.className = "text-sm font-extrabold text-rose-400";
+                fbTitle.textContent = `💥 遭受反擊！生命值 -25 HP（正確答案：${q.options[q.correctIndex]}）`;
+            }
+            fbExp.textContent = `📌 觀念解析：${q.explanation}`;
+
+            document.getElementById("nextOrFinishBattleBtn").disabled = false;
+            saveBattleProgressCheckpoint();
+        }
+
+        // 前往下一題或完成交卷 (含 Edge Case: 防作弊與連點 Debounce + Disabled)
+        document.getElementById("nextOrFinishBattleBtn").addEventListener("click", async () => {
+            const b = state.activeBattle;
+            if (!b || state.isSubmittingQuiz) return;
+
+            if (b.currentIndex < b.questions.length - 1) {
+                b.currentIndex++;
+                saveBattleProgressCheckpoint();
+                renderCurrentBattleQuestion();
+                return;
+            }
+
+            // 最後一題：執行防連點鎖定並結算
+            const btn = document.getElementById("nextOrFinishBattleBtn");
+            state.isSubmittingQuiz = true;
+            btn.disabled = true;
+            document.getElementById("nextOrFinishBtnText").textContent = "⏳ 戰果結算與寫入雲端中...";
+
+            try {
+                await finishAndSettleBattle();
+            } finally {
+                state.isSubmittingQuiz = false;
+            }
+        });
+
+        async function finishAndSettleBattle() {
+            const b = state.activeBattle;
+            if (!b) return;
+
+            if (state.battleTimerInterval) {
+                clearInterval(state.battleTimerInterval);
+                state.battleTimerInterval = null;
+            }
+
+            const totalQ = b.questions.length;
+            const baseScore = Math.round((b.correctCount / totalQ) * 100);
+            const diffCfg = DIFFICULTY_CONFIG[b.difficulty] || DIFFICULTY_CONFIG.medium;
+            const expGained = Math.round(baseScore * diffCfg.multiplier);
+
+            const newRecord = {
+                recordId: "rec_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+                studentName: b.studentName,
+                avatarId: b.avatarId,
+                levelId: b.levelId,
+                difficulty: b.difficulty,
+                score: baseScore,
+                totalQuestions: totalQ,
+                correctCount: b.correctCount,
+                timeSpentSeconds: b.elapsedSeconds,
+                wrongQuestions: b.wrongQuestionIds,
+                completedAt: new Date().toISOString()
+            };
+
+            state.lastSettlement = {
+                record: newRecord,
+                answerLogs: b.answerLogs,
+                hpRemaining: b.hp,
+                expGained: expGained
+            };
+
+            // 清除未完成快取並寫入紀錄
+            state.activeBattle = null;
+            clearBattleProgressCheckpoint();
+
+            state.quizRecords.unshift(newRecord);
+            await saveDocToCloud("quiz_records", newRecord.recordId, newRecord);
+
+            renderSettlementScreen();
+            refreshAllViews();
+        }
+
+        function renderSettlementScreen() {
+            const s = state.lastSettlement;
+            if (!s) return;
+
+            document.getElementById("studentLobbySection").classList.add("hidden");
+            document.getElementById("studentBattleSection").classList.add("hidden");
+            document.getElementById("studentResultSection").classList.remove("hidden");
+
+            const { record, answerLogs, hpRemaining, expGained } = s;
+            const lvl = state.levels.find((l) => l.levelId === record.levelId);
+            const passThreshold = lvl ? lvl.passScore || 70 : 70;
+            const isPassed = record.score >= passThreshold;
+            const diffCfg = DIFFICULTY_CONFIG[record.difficulty] || DIFFICULTY_CONFIG.medium;
+
+            const passTag = document.getElementById("resultPassTag");
+            const badgeIcon = document.getElementById("resultBadgeIcon");
+            const headline = document.getElementById("resultHeadline");
+
+            if (isPassed) {
+                badgeIcon.textContent = record.score === 100 ? "👑" : "🏆";
+                passTag.textContent = `QUEST CLEARED · 試煉通過 (門檻 ${passThreshold} 分)`;
+                passTag.className = "px-3 py-1 rounded-full text-xs font-mono-num font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                headline.textContent = record.score === 100 ? "傳奇誕生！完美無傷制霸關卡" : "試煉突破！成功攻略 ERP 領域";
+            } else {
+                badgeIcon.textContent = "🛡️";
+                passTag.textContent = `QUEST FAILED · 未達及格門檻 (${passThreshold} 分)`;
+                passTag.className = "px-3 py-1 rounded-full text-xs font-mono-num font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40";
+                headline.textContent = "再接再厲！檢視錯題導師提點後再次挑戰";
+            }
+
+            document.getElementById("resultSubtext").textContent = `${lvl ? lvl.title : record.levelId} ｜ 挑戰者：${record.studentName}`;
+            document.getElementById("resultScoreNum").textContent = record.score;
+            document.getElementById("resultExpGainNum").textContent = `+${expGained} EXP`;
+            document.getElementById("resultCorrectRatio").textContent = `${record.correctCount} / ${record.totalQuestions} 題`;
+            document.getElementById("resultDifficultyLabel").textContent = `${record.difficulty.toUpperCase()} (x${diffCfg.multiplier})`;
+            document.getElementById("resultTimeSpent").textContent = `${record.timeSpentSeconds} 秒`;
+            document.getElementById("resultRemainHp").textContent = `${hpRemaining} HP`;
+
+            // 重置 AI 錯題導師文字
+            const wrongLogs = answerLogs.filter((l) => !l.isCorrect);
+            document.getElementById("aiTutorResponseText").textContent =
+                wrongLogs.length === 0
+                    ? "🎉 太強了！本次試煉全數命中無任何錯題。您仍可點擊右上角「召喚 AI 大導師深度解析」，獲取本單元的高階實務整合心法！"
+                    : `本次共有 ${wrongLogs.length} 道錯題。點擊右上角「召喚 AI 大導師深度解析」，由 Gemini 為您進行一分鐘核心觀念提點！`;
+
+            // 渲染逐題檢討清單
+            document.getElementById("resultReviewList").innerHTML = answerLogs.map((log, i) => `
+                <div class="p-4 rounded-xl border ${
+                    log.isCorrect ? "bg-slate-900/80 border-emerald-500/30" : "bg-rose-950/20 border-rose-500/40"
+                } space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="font-mono-num font-bold ${log.isCorrect ? "text-emerald-400" : "text-rose-400"}">
+                            ${log.isCorrect ? "✓ 命中正確" : "✗ 答題失誤"} · Q${i + 1}
+                        </span>
+                        <span class="font-mono-num text-slate-400">#${log.questionId}</span>
+                    </div>
+                    <p class="text-sm font-bold text-white">${log.prompt}</p>
+                    <div class="text-xs space-y-0.5 pt-1">
+                        <div class="${log.isCorrect ? "text-emerald-300" : "text-rose-300"}">您的選擇：${log.chosenOption}</div>
+                        ${!log.isCorrect ? `<div class="text-emerald-400 font-semibold">正確答案：${log.correctOption}</div>` : ""}
+                    </div>
+                    <div class="text-xs text-slate-300 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800 mt-1">
+                        <strong class="text-violet-300">標準解析：</strong>${log.explanation}
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        // 放棄撤退確認
+        document.getElementById("abortBattleBtn").addEventListener("click", () => {
+            openCyberModal({
+                icon: "🏳️",
+                title: "確認撤退離開試煉？",
+                message: "若現在撤退，目前的答題進度將不會寫入英雄榜。確定要返回關卡大廳嗎？",
+                confirmText: "確認撤退",
+                cancelText: "繼續戰鬥",
+                onConfirm: () => {
+                    if (state.battleTimerInterval) clearInterval(state.battleTimerInterval);
+                    state.activeBattle = null;
+                    clearBattleProgressCheckpoint();
+                    document.getElementById("studentBattleSection").classList.add("hidden");
+                    document.getElementById("studentLobbySection").classList.remove("hidden");
+                }
+            });
+        });
+
+        document.getElementById("backToLobbyBtn").addEventListener("click", () => {
+            document.getElementById("studentResultSection").classList.add("hidden");
+            document.getElementById("studentLobbySection").classList.remove("hidden");
+        });
+
+        document.getElementById("retrySameLevelBtn").addEventListener("click", () => {
+            if (state.lastSettlement && state.lastSettlement.record) {
+                startLevelAdventure(state.lastSettlement.record.levelId);
+            }
+        });
+
+        // ============================================================================
+        // 8. Gemini API 賦能：AI 錯題導師 & 老師後台結構化自動生成題目 (含降級保護)
+        // ============================================================================
+        async function callGeminiApiWithTimeout(payload, timeoutMs = 10000) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                const res = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
+                });
+                clearTimeout(timer);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return await res.json();
+            } catch (err) {
+                clearTimeout(timer);
+                throw err;
+            }
+        }
+
+        // 8A. 學生端：AI 錯題導師「一分鐘觀念提點」
+        document.getElementById("invokeAiTutorBtn").addEventListener("click", async () => {
+            if (!state.lastSettlement) return;
+            const { record, answerLogs } = state.lastSettlement;
+            const wrongLogs = answerLogs.filter((l) => !l.isCorrect);
+            const outputBox = document.getElementById("aiTutorResponseText");
+            const btn = document.getElementById("invokeAiTutorBtn");
+
+            btn.disabled = true;
+            outputBox.textContent = "🔮 正在召喚 Gemini 大導師分析您的戰鬥紀錄與 ERP 知識盲點...";
+
+            const systemPrompt =
+                "你是 Tony 楊文澤老師團隊的『ERP 魔法大導師』。請用繁體中文、充滿鼓勵的 RPG 冒險導師口吻，在 180 字以內為學生提供『一分鐘核心觀念提點』與記憶口訣。";
+
+            let userQuery = "";
+            if (wrongLogs.length === 0) {
+                userQuery = `挑戰者「${record.studentName}」在關卡「${record.levelId}」獲得 100 分滿分！請給予榮譽稱讚，並提點 2 個該模組在企業實務導入時的進階注意事項。`;
+            } else {
+                const summary = wrongLogs
+                    .map((w, i) => `${i + 1}. 題目：${w.prompt}｜誤選：${w.chosenOption}｜正解：${w.correctOption}（解析：${w.explanation}）`)
+                    .join("\n");
+                userQuery = `挑戰者「${record.studentName}」得分 ${record.score} 分，答錯題目如下：\n${summary}\n請幫他做一分鐘觀念提點，突破盲點！`;
+            }
+
+            try {
+                const result = await callGeminiApiWithTimeout({
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                });
+                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) throw new Error("Empty response");
+                outputBox.textContent = text.trim();
+            } catch (err) {
+                // Edge Case 2 降級策略：若 AI 失敗，顯示題庫內建的靜態 explanation 彙整
+                console.warn("AI 錯題導師啟動降級保護:", err);
+                showToast("AI 連線忙碌，已自動切換為內建大導師秘笈解析！", "warn");
+                if (wrongLogs.length === 0) {
+                    outputBox.textContent = "👑 【大導師秘笈】恭喜無傷通關！您已徹底貫通本單元的單據流與內控檢核邏輯，建議挑戰更高難度或下一單元！";
+                } else {
+                    outputBox.textContent =
+                        "📜 【大導師內建秘笈重點複習】\n" +
+                        wrongLogs.map((w, idx) => `• 盲點突破 ${idx + 1}：正解為「${w.correctOption}」— ${w.explanation}`).join("\n");
+                }
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // 8B. 老師後台：讀取教材檔案與呼叫 Gemini 結構化生成題目 JSON
+        document.getElementById("materialFileInput").addEventListener("change", (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                document.getElementById("aiSourceMaterialInput").value = ev.target.result || "";
+                showToast(`已成功載入講義檔案「${file.name}」！`, "success");
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById("generateWithGeminiBtn").addEventListener("click", async () => {
+            const rawText = document.getElementById("aiSourceMaterialInput").value.trim();
+            if (!rawText) {
+                showToast("請先輸入或貼上 ERP 教學大綱內容！", "warn");
+                return;
+            }
+
+            const targetLevelId = document.getElementById("aiTargetLevelSelect").value;
+            const targetDiff = document.getElementById("aiTargetDiffSelect").value;
+            const count = parseInt(document.getElementById("aiGenerateCountSelect").value, 10) || 3;
+            const btn = document.getElementById("generateWithGeminiBtn");
+
+            btn.disabled = true;
+            btn.innerHTML = `<span>⏳ Gemini 正在結構化命題中...</span>`;
+
+            const prompt = `請根據以下 ERP 教材內容，設計 ${count} 題繁體中文四選一單選題（難度：${targetDiff}）。
+教材內容：
+${rawText}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                prompt: { type: "STRING" },
+                                options: { type: "ARRAY", items: { type: "STRING" } },
+                                correctIndex: { type: "INTEGER" },
+                                explanation: { type: "STRING" }
+                            },
+                            propertyOrdering: ["prompt", "options", "correctIndex", "explanation"]
+                        }
+                    }
+                }
+            };
+
+            try {
+                const res = await callGeminiApiWithTimeout(payload, 12000);
+                const jsonStr = res?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!jsonStr) throw new Error("Empty JSON");
+                const parsedList = JSON.parse(jsonStr);
+
+                let addedCount = 0;
+                for (const item of parsedList) {
+                    if (item.prompt && Array.isArray(item.options) && item.options.length >= 4) {
+                        const newQ = {
+                            questionId: "q_ai_" + Date.now() + "_" + Math.random().toString(36).substring(2, 5),
+                            levelId: targetLevelId,
+                            difficulty: targetDiff,
+                            prompt: item.prompt,
+                            options: item.options.slice(0, 4),
+                            correctIndex: Number(item.correctIndex) || 0,
+                            explanation: item.explanation || "依課程核心講義解析。"
+                        };
+                        state.questions.unshift(newQ);
+                        await saveDocToCloud("questions", newQ.questionId, newQ);
+                        addedCount++;
+                    }
+                }
+
+                refreshAllViews();
+                showToast(`✨ Gemini 已成功生成並匯入 ${addedCount} 道考題至題庫！`, "success");
+            } catch (err) {
+                console.warn("Gemini 自動出題逾時或失敗，啟動 Edge Case 降級提示:", err);
+                showToast(
+                    "Gemini API 連線逾時，已為您填入標準 JSON 範本於文字框，您可直接點擊右側「📋 手動 JSON 解析匯入」！",
+                    "warn"
+                );
+                // 自動提供一段可立即解析的 JSON 範本供老師一鍵匯入
+                document.getElementById("aiSourceMaterialInput").value = JSON.stringify(
+                    [
+                        {
+                            prompt: "【AI 備援題庫】在 ERP 系統中，主生產排程 (MPS) 與物料需求規劃 (MRP) 的先後順序為何？",
+                            options: [
+                                "先執行 MPS 排定最終成品計畫，再執行 MRP 展開半成品與原物料淨需求",
+                                "先執行 MRP 再執行 MPS",
+                                "兩者毫無關聯",
+                                "只有財務結帳後才能執行 MPS"
+                            ],
+                            correctIndex: 0,
+                            explanation: "MPS 針對獨立需求之最終成品排程，是啟動 MRP 相依需求展開的主要輸入源。"
+                        }
+                    ],
+                    null,
+                    2
+                );
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<span>✨ 呼叫 Gemini 結構化生成題目</span>`;
+            }
+        });
+
+        // Edge Case 降級：手動貼上 JSON 解析匯入
+        document.getElementById("importRawJsonBtn").addEventListener("click", async () => {
+            const rawText = document.getElementById("aiSourceMaterialInput").value.trim();
+            const targetLevelId = document.getElementById("aiTargetLevelSelect").value;
+            const targetDiff = document.getElementById("aiTargetDiffSelect").value;
+
+            try {
+                const parsed = JSON.parse(rawText);
+                const arr = Array.isArray(parsed) ? parsed : [parsed];
+                let count = 0;
+                for (const item of arr) {
+                    if (item.prompt && Array.isArray(item.options) && item.options.length >= 4) {
+                        const newQ = {
+                            questionId: "q_json_" + Date.now() + "_" + Math.random().toString(36).substring(2, 5),
+                            levelId: item.levelId || targetLevelId,
+                            difficulty: item.difficulty || targetDiff,
+                            prompt: item.prompt,
+                            options: item.options.slice(0, 4),
+                            correctIndex: Number(item.correctIndex) || 0,
+                            explanation: item.explanation || "手動匯入題庫解析。"
+                        };
+                        state.questions.unshift(newQ);
+                        await saveDocToCloud("questions", newQ.questionId, newQ);
+                        count++;
+                    }
+                }
+                if (count === 0) throw new Error("格式不符");
+                refreshAllViews();
+                showToast(`已成功從 JSON 結構匯入 ${count} 道題目！`, "success");
+            } catch (e) {
+                showToast("JSON 格式解析失敗，請確認包含 prompt, options (4個選項), correctIndex 欄位。", "error");
+            }
+        });
+
+        // ============================================================================
+        // 9. 老師管理後台：Passcode 通行密鑰驗證、Chart.js 雷達圖與題庫/關卡 CRUD
+        // ============================================================================
+        function requestSwitchToTeacherMode() {
+            if (state.isTeacherAuthenticated) {
+                applyViewMode("teacher");
+                return;
+            }
+
+            // Edge Case 5: 後台存取權限通行密鑰 (Passcode) 驗證
+            openCyberModal({
+                icon: "🛡️",
+                title: "Tony 老師管理後台 · 通行密鑰驗證",
+                message: "為防止挑戰者擅自進入後台竄改題庫，請輸入管理員通行密鑰（預設展示密鑰：8888）：",
+                inputHtml: `
+                    <input id="passcodeModalInput" type="password" value="8888" placeholder="請輸入 Passcode..."
+                        class="w-full bg-slate-900 border border-violet-500 text-center font-mono-num text-lg tracking-widest text-white rounded-xl px-4 py-2.5 focus:outline-none" />
+                `,
+                confirmText: "驗證並進入後台",
+                cancelText: "返回學生端",
+                onConfirm: () => {
+                    const val = document.getElementById("passcodeModalInput")?.value.trim();
+                    if (val === state.teacherPasscode) {
+                        state.isTeacherAuthenticated = true;
+                        showToast("歡迎回來，Tony 老師！指揮中心已解鎖。", "success");
+                        applyViewMode("teacher");
+                    } else {
+                        showToast("通行密鑰錯誤！預設展示密碼為 8888。", "error");
+                    }
+                }
+            });
+        }
+
+        function applyViewMode(targetMode) {
+            state.mode = targetMode;
+            const stuBtn = document.getElementById("switchStudentBtn");
+            const teaBtn = document.getElementById("switchTeacherBtn");
+            const stuView = document.getElementById("studentViewContainer");
+            const teaView = document.getElementById("teacherViewContainer");
+
+            if (targetMode === "student") {
+                stuBtn.className = "px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 bg-violet-600 text-white cyber-glow";
+                teaBtn.className = "px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-400 hover:text-white";
+                stuView.classList.remove("hidden");
+                teaView.classList.add("hidden");
+            } else {
+                teaBtn.className = "px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 bg-violet-600 text-white cyber-glow";
+                stuBtn.className = "px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-400 hover:text-white";
+                stuView.classList.add("hidden");
+                teaView.classList.remove("hidden");
+                renderTeacherAnalytics();
+            }
+        }
+
+        document.getElementById("switchStudentBtn").addEventListener("click", () => applyViewMode("student"));
+        document.getElementById("switchTeacherBtn").addEventListener("click", requestSwitchToTeacherMode);
+
+        // 老師後台子頁籤切換
+        document.querySelectorAll(".teacher-tab-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const tab = btn.getAttribute("data-teacher-tab");
+                document.querySelectorAll(".teacher-tab-btn").forEach((b) => {
+                    b.className = "teacher-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
+                });
+                btn.className = "teacher-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition bg-violet-600 text-white";
+
+                document.getElementById("teacherTabAnalytics").classList.toggle("hidden", tab !== "analytics");
+                document.getElementById("teacherTabQuestions").classList.toggle("hidden", tab !== "questions");
+                document.getElementById("teacherTabLevels").classList.toggle("hidden", tab !== "levels");
+
+                if (tab === "analytics") renderTeacherAnalytics();
+            });
+        });
+
+        function renderTeacherAnalytics() {
+            const recs = state.quizRecords;
+            const totalRuns = recs.length;
+            const avgScore = totalRuns > 0 ? Math.round(recs.reduce((s, r) => s + (Number(r.score) || 0), 0) / totalRuns) : 0;
+
+            let topRec = null;
+            for (const r of recs) {
+                if (!topRec || (r.score || 0) > (topRec.score || 0)) topRec = r;
+            }
+
+            let passCount = 0;
+            recs.forEach((r) => {
+                const lvl = state.levels.find((l) => l.levelId === r.levelId);
+                const threshold = lvl ? lvl.passScore || 70 : 70;
+                if ((r.score || 0) >= threshold) passCount++;
+            });
+            const passRate = totalRuns > 0 ? Math.round((passCount / totalRuns) * 100) : 0;
+
+            document.getElementById("kpiTotalRuns").textContent = `${totalRuns} 次`;
+            document.getElementById("kpiAvgScore").textContent = `${avgScore} 分`;
+            document.getElementById("kpiTopScore").textContent = topRec ? `${topRec.score} 分` : "0 分";
+            document.getElementById("kpiTopStudent").textContent = topRec ? `👑 保持人：${topRec.studentName}` : "尚無紀錄";
+            document.getElementById("kpiPassRate").textContent = `${passRate}%`;
+
+            // 1. 更新 Chart.js 雷達圖
+            renderLevelRadarChart();
+
+            // 2. 統計高頻答錯題目排行 (Top Missed Questions)
+            const missCounts = {};
+            recs.forEach((r) => {
+                if (Array.isArray(r.wrongQuestions)) {
+                    r.wrongQuestions.forEach((qid) => {
+                        missCounts[qid] = (missCounts[qid] || 0) + 1;
+                    });
+                }
+            });
+
+            const sortedMissed = Object.entries(missCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4);
+
+            const wrongListEl = document.getElementById("topWrongQuestionsList");
+            if (sortedMissed.length === 0) {
+                wrongListEl.innerHTML = `<div class="p-4 rounded-xl bg-slate-900 text-slate-400 text-xs text-center">目前尚無錯題紀錄，全班表現優異！</div>`;
+            } else {
+                wrongListEl.innerHTML = sortedMissed.map(([qid, count], idx) => {
+                    const qObj = state.questions.find((q) => q.questionId === qid);
+                    const promptText = qObj ? qObj.prompt : `題目代碼 ${qid}`;
+                    const ansText = qObj ? qObj.options[qObj.correctIndex] : "";
+                    return `
+                        <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 flex items-start justify-between gap-3">
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono-num text-[10px] font-bold">TOP ${idx + 1} · 累計誤答 ${count} 次</span>
+                                    <span class="text-[11px] font-mono-num text-slate-500">#${qid}</span>
+                                </div>
+                                <p class="text-xs font-bold text-slate-100 line-clamp-2">${promptText}</p>
+                                ${ansText ? `<div class="text-[11px] text-emerald-400">✓ 正解：${ansText}</div>` : ""}
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+            }
+
+            // 3. 渲染篩選表格
+            const filterLvl = document.getElementById("adminFilterLevel").value || "ALL";
+            const filterDiff = document.getElementById("adminFilterDiff").value || "ALL";
+
+            const filteredRecs = recs.filter((r) => {
+                const matchLvl = filterLvl === "ALL" || r.levelId === filterLvl;
+                const matchDiff = filterDiff === "ALL" || r.difficulty === filterDiff;
+                return matchLvl && matchDiff;
+            });
+
+            const tbody = document.getElementById("adminRecordsTableBody");
+            if (filteredRecs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">無符合篩選條件之測驗紀錄</td></tr>`;
+            } else {
+                tbody.innerHTML = filteredRecs.map((r) => {
+                    const av = RPG_AVATARS.find((a) => a.id === r.avatarId) || RPG_AVATARS[0];
+                    const lvl = state.levels.find((l) => l.levelId === r.levelId);
+                    const diffCfg = DIFFICULTY_CONFIG[r.difficulty] || DIFFICULTY_CONFIG.medium;
+                    const dateStr = r.completedAt ? new Date(r.completedAt).toLocaleString("zh-TW", { hour12: false }) : "-";
+
+                    return `
+                        <tr class="hover:bg-slate-900/60 transition">
+                            <td class="py-3 px-4 font-mono-num text-xs text-slate-400 whitespace-nowrap">${dateStr}</td>
+                            <td class="py-3 px-4 font-bold text-white whitespace-nowrap">${av.emoji} ${r.studentName}</td>
+                            <td class="py-3 px-4 text-slate-300">${lvl ? lvl.title : r.levelId}</td>
+                            <td class="py-3 px-4">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-mono-num font-bold border ${diffCfg.badgeClass}">
+                                    ${(r.difficulty || "medium").toUpperCase()}
+                                </span>
+                            </td>
+                            <td class="py-3 px-4 font-mono-num text-slate-300">${r.correctCount} / ${r.totalQuestions}</td>
+                            <td class="py-3 px-4 font-mono-num font-extrabold ${r.score >= 70 ? "text-emerald-400" : "text-rose-400"}">${r.score} 分</td>
+                            <td class="py-3 px-4 font-mono-num text-slate-400">${r.timeSpentSeconds} 秒</td>
+                        </tr>
+                    `;
+                }).join("");
+            }
+        }
+
+        function renderLevelRadarChart() {
+            const canvas = document.getElementById("levelRadarChart");
+            if (!canvas || typeof Chart === "undefined") return;
+
+            const labels = state.levels.map((l) => l.title.split("：")[1] || l.title);
+            const avgData = state.levels.map((l) => {
+                const lRecs = state.quizRecords.filter((r) => r.levelId === l.levelId);
+                if (lRecs.length === 0) return 0;
+                return Math.round(lRecs.reduce((acc, r) => acc + (Number(r.score) || 0), 0) / lRecs.length);
+            });
+            const maxData = state.levels.map((l) => {
+                const lRecs = state.quizRecords.filter((r) => r.levelId === l.levelId);
+                if (lRecs.length === 0) return 0;
+                return Math.max(...lRecs.map((r) => Number(r.score) || 0));
+            });
+
+            if (state.radarChartInstance) {
+                state.radarChartInstance.destroy();
+            }
+
+            state.radarChartInstance = new Chart(canvas, {
+                type: "radar",
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: "班級單元平均分",
+                            data: avgData,
+                            backgroundColor: "rgba(124, 58, 237, 0.28)",
+                            borderColor: "#8b5cf6",
+                            pointBackgroundColor: "#8b5cf6",
+                            borderWidth: 2
+                        },
+                        {
+                            label: "班級最高紀錄",
+                            data: maxData,
+                            backgroundColor: "rgba(6, 182, 212, 0.15)",
+                            borderColor: "#06b6d4",
+                            pointBackgroundColor: "#06b6d4",
+                            borderWidth: 2,
+                            borderDash: [4, 4]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            min: 0,
+                            max: 100,
+                            ticks: { stepSize: 25, color: "#94a3b8", backdropColor: "transparent" },
+                            grid: { color: "rgba(148, 163, 184, 0.2)" },
+                            angleLines: { color: "rgba(148, 163, 184, 0.2)" },
+                            pointLabels: { color: "#e2e8f0", font: { size: 11, weight: "bold" } }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: "#cbd5e1", font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        // 模擬一筆學生闖關紀錄 (供老師展示即時圖表變化)
+        document.getElementById("simulateStudentRecordBtn").addEventListener("click", async () => {
+            const sampleStudents = ["Kevin (B112031)", "Sophia (B112055)", "Daniel (B112072)", "Lucas (B112099)"];
+            const randomStu = sampleStudents[Math.floor(Math.random() * sampleStudents.length)];
+            const randomAv = RPG_AVATARS[Math.floor(Math.random() * RPG_AVATARS.length)];
+            const randomLvl = state.levels[Math.floor(Math.random() * state.levels.length)];
+            const diffs = ["easy", "medium", "hard"];
+            const randomDiff = diffs[Math.floor(Math.random() * diffs.length)];
+
+            const lvlQs = state.questions.filter((q) => q.levelId === randomLvl.levelId);
+            const totalQ = 5;
+            const correctCount = Math.floor(Math.random() * 3) + 3; // 3~5 題
+            const wrongQs = lvlQs.slice(0, totalQ - correctCount).map((q) => q.questionId);
+
+            const simRec = {
+                recordId: "rec_sim_" + Date.now(),
+                studentName: randomStu,
+                avatarId: randomAv.id,
+                levelId: randomLvl.levelId,
+                difficulty: randomDiff,
+                score: Math.round((correctCount / totalQ) * 100),
+                totalQuestions: totalQ,
+                correctCount: correctCount,
+                timeSpentSeconds: Math.floor(Math.random() * 80) + 45,
+                wrongQuestions: wrongQs,
+                completedAt: new Date().toISOString()
+            };
+
+            state.quizRecords.unshift(simRec);
+            await saveDocToCloud("quiz_records", simRec.recordId, simRec);
+            refreshAllViews();
+            showToast(`已模擬生成「${randomStu}」的闖關戰績並更新雷達圖！`, "success");
+        });
+
+        // 老師手動新增單筆題目
+        document.getElementById("addManualQuestionBtn").addEventListener("click", async () => {
+            const levelId = document.getElementById("manualLevelSelect").value;
+            const difficulty = document.getElementById("manualDiffSelect").value;
+            const prompt = document.getElementById("manualPromptInput").value.trim();
+            const opt0 = document.getElementById("manualOpt0").value.trim();
+            const opt1 = document.getElementById("manualOpt1").value.trim();
+            const opt2 = document.getElementById("manualOpt2").value.trim();
+            const opt3 = document.getElementById("manualOpt3").value.trim();
+            const correctIndex = parseInt(document.getElementById("manualCorrectIdxSelect").value, 10) || 0;
+            const explanation = document.getElementById("manualExplanationInput").value.trim();
+
+            if (!prompt || !opt0 || !opt1 || !opt2 || !opt3) {
+                showToast("請完整填寫題幹與 A、B、C、D 四個選項！", "warn");
+                return;
+            }
+
+            const newQ = {
+                questionId: "q_" + Date.now(),
+                levelId,
+                difficulty,
+                prompt,
+                options: [opt0, opt1, opt2, opt3],
+                correctIndex,
+                explanation: explanation || "依標準 ERP 實務流程解析。"
+            };
+
+            state.questions.unshift(newQ);
+            await saveDocToCloud("questions", newQ.questionId, newQ);
+
+            document.getElementById("manualPromptInput").value = "";
+            document.getElementById("manualOpt0").value = "";
+            document.getElementById("manualOpt1").value = "";
+            document.getElementById("manualOpt2").value = "";
+            document.getElementById("manualOpt3").value = "";
+            document.getElementById("manualExplanationInput").value = "";
+
+            refreshAllViews();
+            showToast("已成功新增考題至題庫！", "success");
+        });
+
+        // 渲染題庫清單與刪除功能
+        function renderQuestionBankList() {
+            const filterLvl = document.getElementById("bankFilterLevelSelect").value || "ALL";
+            const filtered = filterLvl === "ALL"
+                ? state.questions
+                : state.questions.filter((q) => q.levelId === filterLvl);
+
+            document.getElementById("questionBankCountText").textContent = filtered.length;
+            const container = document.getElementById("questionBankListContainer");
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm">此篩選條件下尚無題目</div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map((q) => {
+                const lvl = state.levels.find((l) => l.levelId === q.levelId);
+                const diffCfg = DIFFICULTY_CONFIG[q.difficulty] || DIFFICULTY_CONFIG.medium;
+                return `
+                    <div class="p-4 hover:bg-slate-900/50 transition flex items-start justify-between gap-4">
+                        <div class="space-y-1.5 flex-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-mono-num font-bold border ${diffCfg.badgeClass}">
+                                    ${(q.difficulty || "medium").toUpperCase()}
+                                </span>
+                                <span class="text-xs font-semibold text-violet-300">${lvl ? lvl.title : q.levelId}</span>
+                                <span class="text-[11px] font-mono-num text-slate-500">#${q.questionId}</span>
+                            </div>
+                            <p class="text-sm font-bold text-white">${q.prompt}</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-xs text-slate-300 pt-1">
+                                ${q.options.map((opt, idx) => `
+                                    <div class="${idx === Number(q.correctIndex) ? "text-emerald-400 font-bold" : "text-slate-400"}">
+                                        ${["A", "B", "C", "D"][idx]}. ${opt} ${idx === Number(q.correctIndex) ? "✓" : ""}
+                                    </div>
+                                `).join("")}
+                            </div>
+                            <div class="text-xs text-slate-400 pt-1">💡 解析：${q.explanation}</div>
+                        </div>
+                        <button type="button" data-del-qid="${q.questionId}"
+                            class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition shrink-0">
+                            刪除
+                        </button>
+                    </div>
+                `;
+            }).join("");
+
+            container.querySelectorAll("button[data-del-qid]").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    const qid = btn.getAttribute("data-del-qid");
+                    state.questions = state.questions.filter((q) => q.questionId !== qid);
+                    if (state.user && state.db && state.isCloudReady) {
+                        try {
+                            await deleteDoc(getDocRef("questions", qid));
+                        } catch (e) {}
+                    }
+                    refreshAllViews();
+                    showToast(`已刪除題目 #${qid}`, "info");
+                });
+            });
+        }
+
+        // 老師建立新關卡與調整及格分數
+        document.getElementById("createNewLevelBtn").addEventListener("click", async () => {
+            const title = document.getElementById("newLevelTitleInput").value.trim();
+            const order = parseInt(document.getElementById("newLevelOrderInput").value, 10) || state.levels.length + 1;
+            const passScore = parseInt(document.getElementById("newLevelPassInput").value, 10) || 70;
+            const description = document.getElementById("newLevelDescInput").value.trim() || "探索 ERP 進階實務與流程整合試煉。";
+
+            if (!title) {
+                showToast("請輸入新關卡的標題名稱！", "warn");
+                return;
+            }
+
+            const newLvl = {
+                levelId: "lvl_custom_" + Date.now(),
+                title,
+                order,
+                description,
+                passScore,
+                createdAt: new Date().toISOString()
+            };
+
+            state.levels.push(newLvl);
+            state.levels.sort((a, b) => (a.order || 1) - (b.order || 1));
+            await saveDocToCloud("levels", newLvl.levelId, newLvl);
+
+            document.getElementById("newLevelTitleInput").value = "";
+            document.getElementById("newLevelDescInput").value = "";
+            refreshAllViews();
+            showToast(`已成功建立新關卡「${title}」！`, "success");
+        });
+
+        function renderAdminLevelsManageList() {
+            const listEl = document.getElementById("adminLevelsManageList");
+            listEl.innerHTML = state.levels.map((lvl) => {
+                const qCount = state.questions.filter((q) => q.levelId === lvl.levelId).length;
+                return `
+                    <div class="p-4 rounded-xl bg-slate-900 border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-mono-num font-bold text-violet-400">ORDER #${lvl.order}</span>
+                                <h4 class="text-sm font-bold text-white">${lvl.title}</h4>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">${lvl.description}</p>
+                            <div class="text-[11px] font-mono-num text-cyan-400 mt-1">目前關卡題庫數：${qCount} 題</div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <label class="text-xs text-slate-400">及格門檻：</label>
+                            <input type="number" data-pass-lvl="${lvl.levelId}" value="${lvl.passScore || 70}" min="50" max="100" step="5"
+                                class="w-20 bg-slate-800 border border-slate-600 text-emerald-400 font-mono-num font-bold text-xs rounded-lg px-2.5 py-1.5" />
+                            <span class="text-xs text-slate-400">分</span>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            listEl.querySelectorAll("input[data-pass-lvl]").forEach((inp) => {
+                inp.addEventListener("change", async (e) => {
+                    const lid = e.target.getAttribute("data-pass-lvl");
+                    const newPass = parseInt(e.target.value, 10) || 70;
+                    const target = state.levels.find((l) => l.levelId === lid);
+                    if (target) {
+                        target.passScore = newPass;
+                        await saveDocToCloud("levels", lid, target);
+                        refreshAllViews();
+                        showToast(`已更新「${target.title}」及格門檻為 ${newPass} 分！`, "success");
+                    }
+                });
+            });
+        }
+
+        // 匯出 CSV 成績單
+        document.getElementById("exportRecordsCsvBtn").addEventListener("click", () => {
+            const headers = ["紀錄ID", "學生姓名", "角色ID", "關卡ID", "挑戰難度", "得分", "答對題數", "總題數", "耗時秒數", "完成時間"];
+            const rows = state.quizRecords.map((r) => [
+                r.recordId,
+                `"${(r.studentName || "").replace(/"/g, '""')}"`,
+                r.avatarId,
+                r.levelId,
+                r.difficulty,
+                r.score,
+                r.correctCount,
+                r.totalQuestions,
+                r.timeSpentSeconds,
+                r.completedAt
+            ]);
+            const csv = "\uFEFF" + [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+
+            try {
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `ERP隨堂測驗平台_戰績報表_${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (e) {}
+
+            openCyberModal({
+                icon: "📥",
+                title: "全班戰績 CSV 匯出完成",
+                message: `共匯出 ${state.quizRecords.length} 筆闖關紀錄，您亦可直接複製下方文字貼入 Excel：`,
+                inputHtml: `<textarea id="csvModalCopyArea" readonly class="w-full h-32 bg-slate-900 border border-slate-700 text-slate-200 font-mono-num text-xs rounded-xl p-2.5">${csv}</textarea>`,
+                confirmText: "複製內容並關閉",
+                onConfirm: () => {
+                    const area = document.getElementById("csvModalCopyArea");
+                    if (area) {
+                        area.select();
+                        document.execCommand("copy");
+                        showToast("已複製 CSV 內容至剪貼簿！", "success");
+                    }
+                }
+            });
+        });
+
+        function populateLevelDropdowns() {
+            const optionsHtml = state.levels
+                .map((l) => `<option value="${l.levelId}">${l.title}</option>`)
+                .join("");
+
+            document.getElementById("aiTargetLevelSelect").innerHTML = optionsHtml;
+            document.getElementById("manualLevelSelect").innerHTML = optionsHtml;
+
+            const filterAllHtml = `<option value="ALL">所有單元關卡 (${state.levels.length})</option>` + optionsHtml;
+            document.getElementById("adminFilterLevel").innerHTML = filterAllHtml;
+            document.getElementById("bankFilterLevelSelect").innerHTML = filterAllHtml;
+        }
+
+        function refreshAllViews() {
+            populateLevelDropdowns();
+            updateHeroHeaderBadge();
+            renderLevelsMap();
+            renderStudentLeaderboard();
+            renderQuestionBankList();
+            renderAdminLevelsManageList();
+            if (state.mode === "teacher") {
+                renderTeacherAnalytics();
+            }
+        }
+
+        document.getElementById("studentNameInput").addEventListener("input", () => {
+            updateHeroHeaderBadge();
+            renderLevelsMap();
+        });
+        document.getElementById("adminFilterLevel").addEventListener("change", renderTeacherAnalytics);
+        document.getElementById("adminFilterDiff").addEventListener("change", renderTeacherAnalytics);
+        document.getElementById("bankFilterLevelSelect").addEventListener("change", renderQuestionBankList);
+
+        // ============================================================================
+        // 10. 應用啟動入口
+        // ============================================================================
+        window.addEventListener("DOMContentLoaded", () => {
+            renderAvatarSelector();
+            renderDifficultySelector();
+            refreshAllViews();
+            checkSavedBattleCheckpoint();
+            initFirebaseCloud();
+        });
+    </script>
+</body>
+</html>
