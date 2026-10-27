@@ -1595,7 +1595,7 @@
                     <div class="bg-slate-900/90 rounded-2xl border border-slate-700/90 hover:border-violet-500/70 p-5 flex flex-col justify-between transition group">
                         <div>
                             <div class="flex items-center justify-between gap-2 mb-3">
-                                <span class="text-xs font-mono-num font-bold text-violet-400">STAGE 0${lvl.order || idx + 1}</span>
+                                <span class="text-base font-mono-num font-extrabold text-sky-300 tracking-wide">關卡 ${lvl.order || idx + 1}</span>
                                 ${statusBadge}
                             </div>
                             <div class="flex items-start gap-3">
@@ -1603,7 +1603,7 @@
                                     ${icon}
                                 </div>
                                 <div>
-                                    <h3 class="text-base font-extrabold text-white group-hover:text-violet-300 transition">${lvl.title}</h3>
+                                    <h3 class="text-base font-bold text-orange-400 group-hover:text-orange-300 transition">${lvl.title}</h3>
                                     <p class="text-xs text-slate-400 mt-1 leading-relaxed">${lvl.description}</p>
                                 </div>
                             </div>
@@ -1615,7 +1615,7 @@
                                 <span>題庫：🌱${easyCount} · ⚔️${medCount} · 🐉${hardCount}</span>
                             </div>
                             <button type="button" data-start-level="${lvl.levelId}"
-                                class="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs sm:text-sm cyber-glow transition flex items-center justify-center gap-2">
+                                class="w-1/2 mx-auto py-1.5 px-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs cyber-glow transition flex items-center justify-center gap-1.5">
                                 <span>⚔️ 進入關卡試煉</span>
                             </button>
                         </div>
